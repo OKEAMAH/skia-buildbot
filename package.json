@@ -71,7 +71,7 @@
     "natives": "^1.1.6",
     "prettier": "^3.1.0",
     "puppeteer": "19.2.2",
-    "puppeteer-core": "19.2.2",
+    "puppeteer-core": "22.7.1",
     "sass": "^1.69.5",
     "sinon": "^7.5.0",
     "socket.io-parser": "^4.2.3",
