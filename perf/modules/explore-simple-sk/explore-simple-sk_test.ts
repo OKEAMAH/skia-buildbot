@@ -112,6 +112,7 @@ describe('applyFuncToTraces', () => {
     trace_format: '',
     need_alert_action: false,
     bug_host_url: '',
+    git_repo_url: '',
   };
 
   // Create a common element-sk to be used by all the tests.
@@ -379,24 +380,13 @@ describe('Default values', () => {
       },
       include_params: null,
     };
-    const defaultBody = JSON.stringify(defaultConfig);
-    fetchMock.get('path:/_/defaults/', {
-      status: 200,
-      body: defaultBody,
-    });
 
     const explore =
       setUpElementUnderTest<ExploreSimpleSk>('explore-simple-sk')();
-    await fetchMock.flush(true);
-    const actualConfig = explore['defaults'];
-    assert.deepEqual(
-      actualConfig,
-      defaultConfig,
-      'actual and default configs are the same'
-    );
+    explore['_defaults'] = defaultConfig;
+
     const originalState = deepCopy(explore.state);
     await explore['applyQueryDefaultsIfMissing']();
-    assert.isTrue(fetchMock.done());
 
     const newState = explore.state;
     assert.notDeepEqual(
@@ -429,6 +419,10 @@ describe('requestFrameBodyDeltaFromState', () => {
     buildParamSet(ret);
     return ret;
   }
+
+  afterEach(() => {
+    fetchMock.reset();
+  });
 
   it('fetches only missing older data when panning left with overlap', async () => {
     // dataframe:           [1100,   1400]
@@ -757,5 +751,107 @@ describe('requestFrameBodyDeltaFromState', () => {
       [900, 1200],
       'fetch entire range if the query changed'
     );
+  });
+});
+
+describe('plotSummary', () => {
+  it('Populate Plot Summary bar', async () => {
+    const explore =
+      await setUpElementUnderTest<ExploreSimpleSk>('explore-simple-sk')();
+
+    const state = deepCopy(explore.state);
+    state.plotSummary = true;
+    const queryTestADataFrame: DataFrame = {
+      header: [
+        { offset: CommitNumber(11), timestamp: TimestampSeconds(1100) },
+        { offset: CommitNumber(12), timestamp: TimestampSeconds(1200) },
+        { offset: CommitNumber(13), timestamp: TimestampSeconds(1300) },
+        { offset: CommitNumber(14), timestamp: TimestampSeconds(1400) },
+      ],
+      traceset: TraceSet({
+        'test=A': Trace([0.1, 0.2, 0.0, 0.4]),
+      }),
+      paramset: ReadOnlyParamSet({}),
+      skip: 0,
+    };
+    buildParamSet(queryTestADataFrame);
+
+    explore['fullDataFrame'] = queryTestADataFrame;
+    explore['populatePlotSummary']();
+    const plotSummaryElement = explore['plotSummary'];
+    assert.isNotNull(plotSummaryElement);
+    assert.isNotNull(plotSummaryElement!['currentChartData']);
+  });
+
+  it('Plot Summary bar not enabled', async () => {
+    const explore =
+      await setUpElementUnderTest<ExploreSimpleSk>('explore-simple-sk')();
+
+    explore['fullDataFrame'] = null;
+    explore['populatePlotSummary']();
+    const plotSummaryElement = explore['plotSummary'];
+    assert.isNotNull(plotSummaryElement);
+    assert.isNull(plotSummaryElement!['currentChartData']);
+  });
+
+  it('Populate Extended timeline', async () => {
+    const finishedBody: progress.SerializedProgress = {
+      status: 'Finished',
+      messages: [],
+      results: {},
+      url: '',
+    };
+    fetchMock.post('/_/frame/start', finishedBody);
+    const defaultConfig: QueryConfig = {
+      default_param_selections: null,
+      default_url_values: null,
+      include_params: null,
+    };
+
+    const defaultBody = JSON.stringify(defaultConfig);
+    fetchMock.get('path:/_/defaults/', {
+      status: 200,
+      body: defaultBody,
+    });
+
+    fetchMock.post('/_/count/', {
+      count: 0,
+      paramset: {},
+    });
+
+    fetchMock.get(/_\/initpage\/.*/, () => ({
+      dataframe: {
+        traceset: null,
+        header: null,
+        paramset: {},
+        skip: 0,
+      },
+      ticks: [],
+      skps: [],
+      msg: '',
+    }));
+
+    const explore =
+      await setUpElementUnderTest<ExploreSimpleSk>('explore-simple-sk')();
+    const queryTestADataFrame: DataFrame = {
+      header: [
+        { offset: CommitNumber(11), timestamp: TimestampSeconds(1100) },
+        { offset: CommitNumber(12), timestamp: TimestampSeconds(1200) },
+        { offset: CommitNumber(13), timestamp: TimestampSeconds(1300) },
+        { offset: CommitNumber(14), timestamp: TimestampSeconds(1400) },
+      ],
+      traceset: TraceSet({
+        'test=A': Trace([0.1, 0.2, 0.0, 0.4]),
+      }),
+      paramset: ReadOnlyParamSet({}),
+      skip: 0,
+    };
+    buildParamSet(queryTestADataFrame);
+
+    explore['fullDataFrame'] = queryTestADataFrame;
+    explore.state.plotSummary = true;
+    explore['populateExtendedTimelineForPlotSummary']();
+    await fetchMock.flush(true);
+    assert.isTrue(fetchMock.done('/_/frame/start'));
   });
 });

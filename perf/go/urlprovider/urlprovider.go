@@ -29,10 +29,13 @@ func (prov *URLProvider) Explore(ctx context.Context, startCommitNumber int, end
 	return "/e/?" + queryUrl.Encode()
 }
 
-func (prov *URLProvider) MultiGraph(ctx context.Context, startCommitNumber int, endCommitNumber int, shortcutId string) string {
+func (prov *URLProvider) MultiGraph(ctx context.Context, startCommitNumber int, endCommitNumber int, shortcutId string, disableFilterParentTraces bool) string {
 	queryUrl := url.Values{}
 	prov.fillCommonParams(ctx, queryUrl, startCommitNumber, endCommitNumber)
 	queryUrl["shortcut"] = []string{shortcutId}
+	if disableFilterParentTraces {
+		queryUrl["disable_filter_parent_traces"] = []string{"true"}
+	}
 
 	return "/m/?" + queryUrl.Encode()
 }
@@ -64,6 +67,4 @@ func (prov *URLProvider) fillCommonParams(ctx context.Context, queryUrl url.Valu
 	// We will shift the end time by a day so the graph doesn't render the anomalies right at the end
 	endTime := time.Unix(endCommit.Timestamp, 0).AddDate(0, 0, 1)
 	queryUrl["end"] = []string{strconv.Itoa(int(endTime.Unix()))}
-
-	queryUrl["summary"] = []string{"true"}
 }

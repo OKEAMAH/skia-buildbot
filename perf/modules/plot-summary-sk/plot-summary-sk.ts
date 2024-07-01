@@ -31,6 +31,13 @@ export interface PlotSummarySkSelectionEventDetails {
 export class PlotSummarySk extends ElementSk {
   constructor() {
     super(PlotSummarySk.template);
+
+    this._upgradeProperty('width');
+    this._upgradeProperty('height');
+  }
+
+  static get observedAttributes(): string[] {
+    return ['width', 'height'];
   }
 
   private overlayCtx: CanvasRenderingContext2D | null = null;
@@ -47,7 +54,7 @@ export class PlotSummarySk extends ElementSk {
 
   private commitsEnd: number = 0;
 
-  private valuesRangeDate: d3Scale.ScaleTime<number, number> | null = null;
+  private valuesRangeDate: d3Scale.ScaleLinear<number, number> | null = null;
 
   private dateStart: Date = new Date();
 
@@ -79,34 +86,51 @@ export class PlotSummarySk extends ElementSk {
   private currentChartData: ChartData | null = null;
 
   private static template = (ele: PlotSummarySk) => html`
-    <div class="border">
-      <div
-        id="plot"
-        class="plot"
-        width=${ele.width * window.devicePixelRatio}
-        height=${ele.height * window.devicePixelRatio}
-        style="transform-origin: 0 0; transform: scale(${1 /
-        window.devicePixelRatio});"></div>
-      <canvas
-        id="overlay"
-        class="overlay"
-        width=${ele.width * window.devicePixelRatio}
-        height=${ele.height * window.devicePixelRatio}
-        style="transform-origin: 0 0; transform: scale(${1 /
-        window.devicePixelRatio});"></canvas>
-    </div>
+    <div
+      id="plot"
+      class="plot"
+      width=${ele.width * window.devicePixelRatio}
+      height=${ele.height * window.devicePixelRatio}
+      style="transform-origin: 0 0;"></div>
+    <canvas
+      id="overlay"
+      class="overlay"
+      width=${ele.width * window.devicePixelRatio}
+      height=${ele.height * window.devicePixelRatio}
+      style="transform-origin: 0 0;"></canvas>
   `;
 
   async connectedCallback(): Promise<void> {
     super.connectedCallback();
+    const resizeObserver = new ResizeObserver(
+      (entries: ResizeObserverEntry[]) => {
+        entries.forEach((entry) => {
+          this.width = entry.contentRect.width;
+          this.height = entry.contentRect.height;
+          if (this.currentChartData !== null) {
+            this.render();
+          }
+        });
+      }
+    );
+    resizeObserver.observe(this);
     this.render();
 
     window.requestAnimationFrame(this.raf.bind(this));
   }
 
+  attributeChangedCallback(
+    _: string,
+    oldValue: string,
+    newValue: string
+  ): void {
+    if (oldValue !== newValue) {
+      this.render();
+    }
+  }
+
   render(): void {
     this._render();
-    this.scale = window.devicePixelRatio;
     this.plotElement = this.querySelector<HTMLElement>('#plot')!;
     this.overlayCanvas = this.querySelector<HTMLCanvasElement>('#overlay')!;
     this.overlayCtx = this.overlayCanvas.getContext('2d');
@@ -135,7 +159,7 @@ export class PlotSummarySk extends ElementSk {
         this.currentChartData!.data.length - 1
       ].x as Date;
       this.valuesRangeDate = d3Scale
-        .scaleTime()
+        .scaleLinear()
         .domain([0, this.width])
         .range([this.dateStart.getTime(), this.dateEnd.getTime()]);
     }
@@ -151,21 +175,20 @@ export class PlotSummarySk extends ElementSk {
   }
 
   // Select the provided range on the plot-summary.
-  public Select(valueStart: number | Date, valuesEnd: number | Date) {
+  public Select(valueStart: number, valuesEnd: number | Date) {
     if (this.isCommitScale) {
       this.selectionRange = [
-        this.valuesRangeCommit!(valueStart),
-        this.valuesRangeCommit!(valuesEnd),
+        this.valuesRangeCommit!.invert(valueStart),
+        this.valuesRangeCommit!.invert(valuesEnd),
       ];
     } else {
       this.selectionRange = [
-        this.valuesRangeDate!(valueStart),
-        this.valuesRangeDate!(valuesEnd),
+        this.valuesRangeDate!.invert(valueStart),
+        this.valuesRangeDate!.invert(valuesEnd),
       ];
     }
 
-    // Dispatch the summary selection event.
-    this.summarySelected();
+    this.drawSelection();
   }
 
   // Display the chart data on the plot.
@@ -309,6 +332,14 @@ export class PlotSummarySk extends ElementSk {
     this.setAttribute('highlight_color', val);
   }
 
+  /** Set's the hidden attribute. */
+  set hidden(val: boolean) {
+    super.hidden = val;
+    // Update the attribute to the child elements as well.
+    this.overlayCanvas!.hidden = val;
+    this.plotElement!.hidden = val;
+  }
+
   // Converts an event to a specific point
   private eventToCanvasPt(e: MousePosition) {
     const clientRect = this.overlayCtx!.canvas.getBoundingClientRect();
@@ -358,11 +389,22 @@ export class PlotSummarySk extends ElementSk {
     if (this.isCurrentlySelecting) {
       // If the user is currently selecting an area, update the selection range
       // array based on the current mouse position.
-      const startx = this.selectionRange![0];
-      let endx = this.currentMousePosition.clientX;
-      if (endx < startx) {
-        endx = startx;
+      let startx = this.selectionRange![0];
+      let endx = this.selectionRange![1];
+      const currentx = this.currentMousePosition.clientX;
+
+      // Figure out the closest end of the selection to the current position.
+      // This tells us the direction in which the user is highlighting.
+      const isMovingOnLeft =
+        Math.abs(currentx - startx) < Math.abs(currentx - endx);
+      if (isMovingOnLeft) {
+        // If the mouse is towards the left side, we update the start values.
+        startx = currentx;
+      } else {
+        // If the mouse is towards the right, we update the end values.
+        endx = currentx;
       }
+      this.selectionRange![0] = startx;
       this.selectionRange![1] = endx;
     } else if (this.lockedSelectionDiffs !== null) {
       // User is dragging the current selection around.

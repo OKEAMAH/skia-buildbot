@@ -27,14 +27,16 @@ func PairwiseWorkflow(ctx workflow.Context, p *workflows.PairwiseParams) (*pinpo
 			AggregationMethod: p.Request.Statistic,
 			Iterations:        p.GetInitialAttempt(),
 		},
-		LeftCommit:  midpoint.NewCombinedCommit(&pinpoint_proto.Commit{GitHash: p.Request.StartGitHash}),
-		RightCommit: midpoint.NewCombinedCommit(&pinpoint_proto.Commit{GitHash: p.Request.EndGitHash}),
+		LeftCommit:  (*midpoint.CombinedCommit)(p.Request.StartCommit),
+		RightCommit: (*midpoint.CombinedCommit)(p.Request.EndCommit),
 	}
 
 	var pr *PairwiseRun
 	if err := workflow.ExecuteChildWorkflow(ctx, workflows.PairwiseCommitsRunner, pairwiseRunnerParams).Get(ctx, &pr); err != nil {
 		return nil, skerr.Wrap(err)
 	}
+
+	pr.removeDataUntilBalanced(p.Request.Chart)
 
 	lValues := pr.Left.AllValues(p.Request.Chart)
 	rValues := pr.Right.AllValues(p.Request.Chart)

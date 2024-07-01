@@ -87,7 +87,7 @@ const (
 
 	// paramsetRefresherPeriod is how often we refresh our canonical paramset from the OPS's
 	// stored in the last two tiles.
-	paramsetRefresherPeriod = 5 * time.Minute
+	paramsetRefresherPeriod = 1 * time.Hour
 
 	// startClusterDelay is the time we wait between starting each clusterer, to avoid hammering
 	// the trace store all at once.
@@ -156,7 +156,7 @@ type Frontend struct {
 
 	dryrunRequests *dryrun.Requests
 
-	paramsetRefresher *psrefresh.ParamSetRefresher
+	paramsetRefresher psrefresh.ParamSetRefresher
 
 	dfBuilder dataframe.DataFrameBuilder
 
@@ -275,6 +275,7 @@ type SkPerfConfig struct {
 	TraceFormat                config.TraceFormat `json:"trace_format"`                    // Trace formatter to use
 	NeedAlertAction            bool               `json:"need_alert_action"`               // Action to take for the alert.
 	BugHostURL                 string             `json:"bug_host_url"`                    // The URL for the bug host for the instance.
+	GitRepoUrl                 string             `json:"git_repo_url"`                    // The URL for the associated git repo.
 }
 
 // getPageContext returns the value of `window.perf` serialized as JSON.
@@ -301,6 +302,7 @@ func (f *Frontend) getPageContext() (template.JS, error) {
 		TraceFormat:                config.Config.TraceFormat,
 		NeedAlertAction:            config.Config.NeedAlertAction,
 		BugHostURL:                 config.Config.BugHostUrl,
+		GitRepoUrl:                 config.Config.GitRepoConfig.URL,
 	}
 	b, err := json.MarshalIndent(pc, "", "  ")
 	if err != nil {
@@ -331,9 +333,9 @@ func (f *Frontend) templateHandler(name string) http.HandlerFunc {
 
 // newParamsetProvider returns a regression.ParamsetProvider which produces a paramset
 // for the current tiles.
-func newParamsetProvider(pf *psrefresh.ParamSetRefresher) regression.ParamsetProvider {
+func newParamsetProvider(pf psrefresh.ParamSetRefresher) regression.ParamsetProvider {
 	return func() paramtools.ReadOnlyParamSet {
-		return pf.Get()
+		return pf.GetAll()
 	}
 }
 
@@ -428,13 +430,6 @@ func (f *Frontend) initialize() {
 		sklog.Fatalf("Failed to build TraceStore: %s", err)
 	}
 
-	sklog.Info("About to build paramset refresher.")
-
-	f.paramsetRefresher = psrefresh.NewParamSetRefresher(f.traceStore, f.flags.NumParamSetsForQueries)
-	if err := f.paramsetRefresher.Start(paramsetRefresherPeriod); err != nil {
-		sklog.Fatalf("Failed to build paramsetRefresher: %s", err)
-	}
-
 	sklog.Info("About to build perfgit.")
 
 	f.perfGit, err = builders.NewPerfGitFromConfig(ctx, f.flags.Local, config.Config)
@@ -467,6 +462,23 @@ func (f *Frontend) initialize() {
 		f.traceStore,
 		f.flags.NumParamSetsForQueries,
 		dfbuilder.Filtering(config.Config.FilterParentTraces))
+
+	sklog.Info("About to build paramset refresher.")
+
+	paramsetRefresher := psrefresh.NewDefaultParamSetRefresher(f.traceStore, f.flags.NumParamSetsForQueries, f.dfBuilder, config.Config.QueryConfig)
+	if config.Config.QueryConfig.CacheConfig.Enabled {
+		cache, err := builders.GetCacheFromConfig(ctx, *config.Config)
+		if err != nil {
+			sklog.Fatalf("Error creating cache from the config : %v", err)
+		}
+		f.paramsetRefresher = psrefresh.NewCachedParamSetRefresher(paramsetRefresher, cache)
+	} else {
+		f.paramsetRefresher = paramsetRefresher
+	}
+
+	if err := f.paramsetRefresher.Start(paramsetRefresherPeriod); err != nil {
+		sklog.Fatalf("Failed to build paramsetRefresher: %s", err)
+	}
 
 	if config.Config.FetchChromePerfAnomalies {
 		f.anomalyApiClient, err = chromeperf.NewAnomalyApiClient(ctx)
@@ -813,7 +825,7 @@ func (f *Frontend) alertGroupQueryHandler(w http.ResponseWriter, r *http.Request
 				queryParams := alertGroupDetails.GetQueryParams(ctx)
 				redirectUrl = f.urlProvider.Explore(ctx, int(alertGroupDetails.StartCommitNumber), int(alertGroupDetails.EndCommitNumber), queryParams, false)
 			} else {
-				redirectUrl = f.urlProvider.MultiGraph(ctx, int(alertGroupDetails.StartCommitNumber), int(alertGroupDetails.EndCommitNumber), shortcutId)
+				redirectUrl = f.urlProvider.MultiGraph(ctx, int(alertGroupDetails.StartCommitNumber), int(alertGroupDetails.EndCommitNumber), shortcutId, false)
 			}
 
 		} else {
@@ -831,14 +843,12 @@ func (f *Frontend) anomalyHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), defaultDatabaseTimeout)
 	defer cancel()
 
-	sklog.Info("Received anomaly request")
 	if f.anomalyApiClient == nil {
 		sklog.Info("Anomaly service is not enabled")
 		httputils.ReportError(w, nil, "Anomaly service is not enabled", http.StatusNotFound)
 		return
 	}
 	key := r.URL.Query().Get("key")
-	sklog.Infof("Anomaly key is %s", key)
 	ctx, span := trace.StartSpan(ctx, "anomalyGetRequest")
 	defer span.End()
 	startCommit, endCommit, queryParams, err := f.anomalyApiClient.GetAnomalyFromUrlSafeKey(ctx, key)
@@ -849,7 +859,30 @@ func (f *Frontend) anomalyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Generate the explore page url for the given params.
 	queryParams["stat"] = []string{"value"}
-	redirectUrl := f.urlProvider.Explore(ctx, startCommit, endCommit, queryParams, true)
+	graphs := []graphsshortcut.GraphConfig{}
+	queryString := f.urlProvider.GetQueryStringFromParameters(queryParams)
+
+	// Let's generate the graph config that represents the graph for the queryString.
+	// This is then inserted as a shortcut and we generate the multigraph url with
+	// the created shortcut.
+	graphs = append(graphs, graphsshortcut.GraphConfig{
+		Queries:  []string{queryString},
+		Formulas: []string{},
+	})
+	shortcutObj := graphsshortcut.GraphsShortcut{
+		Graphs: graphs,
+	}
+
+	var redirectUrl string
+	shortcutId, err := f.graphsShortcutStore.InsertShortcut(ctx, &shortcutObj)
+	if err != nil {
+		// Something went wrong while inserting shortcut. Let's fall back to the explore page.
+		sklog.Errorf("Error inserting shortcut %s", err)
+		redirectUrl = f.urlProvider.Explore(ctx, startCommit, endCommit, queryParams, true)
+	} else {
+		redirectUrl = f.urlProvider.MultiGraph(ctx, startCommit, endCommit, shortcutId, true)
+	}
+
 	sklog.Infof("Generated url: %s", redirectUrl)
 	http.Redirect(w, r, redirectUrl, http.StatusSeeOther)
 }
@@ -895,7 +928,7 @@ func (f *Frontend) PreflightQuery(ctx context.Context, w http.ResponseWriter, qs
 	if qs == "" {
 		return 0, fullPS, nil
 	} else {
-		count, ps, err := f.dfBuilder.PreflightQuery(ctx, q, fullPS)
+		count, ps, err := f.paramsetRefresher.GetParamSetForQuery(ctx, q, u)
 		if err != nil {
 			httputils.ReportError(w, err, "Failed to Preflight the query, too many key-value pairs selected. Limit is 200.", http.StatusBadRequest)
 			return 0, nil, err
@@ -1055,7 +1088,7 @@ func (f *Frontend) clusterStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		// This intentionally does not use r.Context() because we want it to outlive this request.
-		err := regression.ProcessRegressions(context.Background(), req, cb, f.perfGit, f.shortcutStore, f.dfBuilder, f.paramsetRefresher.Get(), regression.ExpandBaseAlertByGroupBy, regression.ReturnOnError, config.Config.AnomalyConfig)
+		err := regression.ProcessRegressions(context.Background(), req, cb, f.perfGit, f.shortcutStore, f.dfBuilder, f.paramsetRefresher.GetAll(), regression.ExpandBaseAlertByGroupBy, regression.ReturnOnError, config.Config.AnomalyConfig)
 		if err != nil {
 			sklog.Errorf("ProcessRegressions returned: %s", err)
 			req.Progress.Error("Failed to load data.")
@@ -1877,7 +1910,7 @@ func (f *Frontend) newFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 
 // UpdateFavRequest is a request to update an existing Favorite
 type UpdateFavRequest struct {
-	Id          int64  `json:"id"`
+	Id          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Url         string `json:"url"`
@@ -1926,7 +1959,7 @@ func (f *Frontend) updateFavoriteHandler(w http.ResponseWriter, r *http.Request)
 
 // DeleteFavRequest is a request to delete an existing Favorite
 type DeleteFavRequest struct {
-	Id int64 `json:"id"`
+	Id string `json:"id"`
 }
 
 // deleteFavoriteHandler deletes a favorite per id in the db
@@ -2182,6 +2215,7 @@ func (f *Frontend) favoritesHandler(w http.ResponseWriter, r *http.Request) {
 
 		for _, favorite := range favsFromDb {
 			favoriteList = append(favoriteList, config.FavoritesSectionLinkConfig{
+				Id:          favorite.ID,
 				Text:        favorite.Name,
 				Href:        favorite.Url,
 				Description: favorite.Description,
@@ -2354,7 +2388,7 @@ func (f *Frontend) Serve() {
 // traces stored in the two most recent tiles in the trace store. It is filtered
 // if such filtering is turned on in the config.
 func (f *Frontend) getParamSet() paramtools.ReadOnlyParamSet {
-	paramSet := f.paramsetRefresher.Get()
+	paramSet := f.paramsetRefresher.GetAll()
 
 	return filterParamSetIfNeeded(paramSet)
 }

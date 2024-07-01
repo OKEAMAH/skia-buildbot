@@ -7,9 +7,15 @@ export interface DataPoint {
   y: number;
 }
 
+export enum ChartAxisFormat {
+  Commit,
+  Date,
+}
+
 export interface ChartData {
   xLabel: string;
   yLabel: string;
+  chartAxisFormat: ChartAxisFormat;
   data: DataPoint[];
 }
 
@@ -26,26 +32,28 @@ export function DrawSummaryChart(
   });
 
   const dataForChart = google.visualization.arrayToDataTable(data);
-
+  const format =
+    chartData.chartAxisFormat === ChartAxisFormat.Commit ? '#' : 'MMM dd, yy';
   const options: google.visualization.LineChartOptions = {
-    legend: 'none',
     width: width,
     height: height,
     hAxis: {
-      textPosition: 'none',
+      textPosition: 'out',
       gridlines: {
-        color: 'transparent',
+        count: 10,
       },
+      format: format,
     },
     vAxis: {
       textPosition: 'out',
       gridlines: {
         color: 'transparent',
       },
+      viewWindowMode: 'maximized',
     },
     chartArea: {
       width: '100%',
-      height: '100%',
+      height: '50%',
       backgroundColor: {
         stroke: 'black',
         strokeWidth: 1,

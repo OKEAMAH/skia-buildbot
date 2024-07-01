@@ -46,9 +46,14 @@
             "arch",
             "config",
             "test",
-            "units",
-	    "bot"
-        ]
+            "units"
+        ],
+        "cache_config": {
+            "type": "local",
+            "enabled": true,
+            "level1_cache_key": "arch",
+            "level2_cache_key": "config"
+        }
     },
     "favorites": {
         "sections":[

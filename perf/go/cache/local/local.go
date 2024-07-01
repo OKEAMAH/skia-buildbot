@@ -2,6 +2,8 @@
 package local
 
 import (
+	"context"
+
 	lru "github.com/hashicorp/golang-lru"
 	"go.skia.org/infra/go/skerr"
 	"go.skia.org/infra/perf/go/cache"
@@ -31,6 +33,19 @@ func (c *Cache) Add(key string) {
 // Exists implements the cache.Cache interface.
 func (c *Cache) Exists(key string) bool {
 	return c.cache.Contains(key)
+}
+
+func (c *Cache) SetValue(ctx context.Context, key string, value string) error {
+	_ = c.cache.Add(key, value)
+	return nil
+}
+
+func (c *Cache) GetValue(ctx context.Context, key string) (string, error) {
+	value, ok := c.cache.Get(key)
+	if !ok {
+		return "", nil
+	}
+	return value.(string), nil
 }
 
 // Confirm we implement the interface.
