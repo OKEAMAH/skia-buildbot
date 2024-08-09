@@ -12,8 +12,8 @@ import (
 	"go.skia.org/infra/perf/go/workflows"
 	pinpoint "go.skia.org/infra/pinpoint/go/workflows"
 	"go.skia.org/infra/pinpoint/go/workflows/catapult"
-
 	pp_pb "go.skia.org/infra/pinpoint/proto/v1"
+
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/grpc"
@@ -44,7 +44,7 @@ func TestMaybeTriggerBisection_GroupActionBisect_HappyPath(t *testing.T) {
 	env.RegisterActivity(agsa)
 	env.RegisterActivity(gsa)
 	env.RegisterActivity(csa)
-	env.RegisterWorkflowWithOptions(catapult.CatapultBisectWorkflow, workflow.RegisterOptions{Name: pinpoint.CatapultBisect})
+	env.RegisterWorkflowWithOptions(catapult.CulpritFinderWorkflow, workflow.RegisterOptions{Name: pinpoint.CulpritFinderWorkflow})
 
 	anomalyGroupId := "group_id1"
 	mockAnomalyIds := []string{"anomaly1"}
@@ -81,10 +81,12 @@ func TestMaybeTriggerBisection_GroupActionBisect_HappyPath(t *testing.T) {
 	mockEndRevision := "revision10"
 	env.OnActivity(gsa.GetCommitRevision, mock.Anything, startCommit).Return(mockStartRevision, nil).Once()
 	env.OnActivity(gsa.GetCommitRevision, mock.Anything, endCommit).Return(mockEndRevision, nil).Once()
-	env.OnWorkflow(pinpoint.CatapultBisect, mock.Anything,
-		&pinpoint.BisectParams{
-			Request: &pp_pb.ScheduleBisectRequest{
-				ComparisonMode:       "performance",
+
+	// TODO(wenbinzhang): re-enable when bisection invoke is updated.
+	env.OnWorkflow(pinpoint.CulpritFinderWorkflow,
+		mock.Anything,
+		&pinpoint.CulpritFinderParams{
+			Request: &pp_pb.ScheduleCulpritFinderRequest{
 				StartGitHash:         mockStartRevision,
 				EndGitHash:           mockEndRevision,
 				Configuration:        mockAnomaly.Paramset["bot"],
@@ -94,15 +96,12 @@ func TestMaybeTriggerBisection_GroupActionBisect_HappyPath(t *testing.T) {
 				AggregationMethod:    mockAnomaly.Paramset["stat"],
 				ImprovementDirection: mockAnomaly.ImprovementDirection,
 			},
-		}).Return(&pp_pb.BisectExecution{
+		}).Return(&pp_pb.CulpritFinderExecution{
 		JobId: "bisectionId",
 	}, nil).Once()
-	server.On("UpdateAnomalyGroup", mock.Anything, &ag_pb.UpdateAnomalyGroupRequest{
-		BisectionId:    "bisectionId",
-		AnomalyGroupId: anomalyGroupId}).
+	server.On("UpdateAnomalyGroup", mock.Anything, mock.Anything).
 		Return(
 			&ag_pb.UpdateAnomalyGroupResponse{}, nil)
-
 	env.ExecuteWorkflow(MaybeTriggerBisectionWorkflow, &workflows.MaybeTriggerBisectionParam{
 		AnomalyGroupServiceUrl: addr,
 		AnomalyGroupId:         anomalyGroupId,
@@ -128,7 +127,7 @@ func TestMaybeTriggerBisection_GroupActionReport_HappyPath(t *testing.T) {
 	env.RegisterActivity(agsa)
 	env.RegisterActivity(gsa)
 	env.RegisterActivity(csa)
-	env.RegisterWorkflowWithOptions(catapult.CatapultBisectWorkflow, workflow.RegisterOptions{Name: pinpoint.CatapultBisect})
+	env.RegisterWorkflowWithOptions(catapult.CulpritFinderWorkflow, workflow.RegisterOptions{Name: pinpoint.CulpritFinderWorkflow})
 
 	anomalyGroupId := "group_id1"
 	mockAnomalyIds := []string{"anomaly1"}

@@ -46,9 +46,20 @@
             "arch",
             "config",
             "test",
-            "units",
-	    "bot"
-        ]
+            "units"
+        ],
+        "cache_config": {
+            "type": "local",
+            "enabled": true,
+            "level1_cache_key": "arch",
+            "level2_cache_key": "config"
+        },
+        "default_url_values": {
+            "plotSummary": "true",
+            "useTestPicker": "true",
+            "showZero": "false",
+            "enable_chart_tooltip": "true"
+        }
     },
     "favorites": {
         "sections":[

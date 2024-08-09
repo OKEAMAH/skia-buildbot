@@ -2,15 +2,15 @@ use_relative_paths = True
 
 vars = {
   'cpython_version':    'version:2@2.7.18.chromium.47',
-  'cpython3_version':   'version:2@3.11.9.chromium.35',
-  'luci_tools_version': 'git_revision:454b1d585279d71c7cebd435f5700dfbc6211ed7',
-  'skia_tools_version': 'git_revision:0d6a48911a028986324799a89343613223da993c',
-  'tools_git_version':  'version:2@2.45.2.chromium.11',
+  'cpython3_version':   'version:3@3.11.9.chromium.35',
+  'luci_tools_version': 'git_revision:351acf284d662cf568d06b243b9b5b55587f8884',
+  'skia_tools_version': 'git_revision:d7d6072b1cbad96466ed51959a37502176ef08b2',
+  'tools_git_version':  'version:3@2.46.0.chromium.11',
 }
 
 deps = {
   'depot_tools': {
-    'url': 'https://chromium.googlesource.com/chromium/tools/depot_tools.git@954a8d771345d12f8920da03359b56c001632a7b',
+    'url': 'https://chromium.googlesource.com/chromium/tools/depot_tools.git@5f6542c176c1c46ca661885b7c9871206c31760a',
     'condition': 'False',
   },
   'cipd_bin_packages': {

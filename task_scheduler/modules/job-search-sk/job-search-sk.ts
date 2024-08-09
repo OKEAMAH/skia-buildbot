@@ -70,6 +70,10 @@ const jobStatusToLabelAndClass: { [key: string]: DisplayJobResult } = {
     label: 'canceled',
     class: 'bg-canceled',
   },
+  [JobStatus.JOB_STATUS_REQUESTED]: {
+    label: 'requested',
+    class: 'bg-in-progress',
+  },
 };
 
 interface SearchTerm {
@@ -245,7 +249,8 @@ export class JobSearchSk extends ElementSk {
                     <td>${job.isForce ? 'true' : 'false'}</td>
                     <td>${job.createdAt}</td>
                     <td>
-                      ${job.status === JobStatus.JOB_STATUS_IN_PROGRESS
+                      ${job.status === JobStatus.JOB_STATUS_IN_PROGRESS ||
+                      job.status === JobStatus.JOB_STATUS_REQUESTED
                         ? html`
                             <button
                               class="cancel"

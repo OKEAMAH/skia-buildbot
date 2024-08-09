@@ -205,7 +205,7 @@ func mustStartDebugServer(fsc *frontendServerConfig) {
 			// Sample usage:
 			//     $ kubectl port-forward --address 0.0.0.0 gold-skia-infra-frontend-xxxxxxxxxx-yyyyy 8000:7001
 			sklog.Infof("Internal server on http://127.0.0.1" + fsc.DebugPort)
-			sklog.Fatal(http.ListenAndServe(fsc.DebugPort, web.MakeDebugRouter()))
+			httputils.ServePprof(fsc.DebugPort)
 		}()
 	}
 }
@@ -508,8 +508,6 @@ func addAuthenticatedJSONRoutes(router chi.Router, fsc *frontendServerConfig, ha
 	add("/json/v2/triagelog/undo", handlers.TriageUndoHandler, "POST")
 	add("/json/whoami", handlers.Whoami, "GET")
 	add("/json/v1/whoami", handlers.Whoami, "GET")
-	// TODO(lovisolo): Delete once all links to details page include grouping information.
-	add("/json/v1/groupingfortest", handlers.GroupingForTestHandler, "POST")
 
 	// Only expose these endpoints if this instance is not a public view. The reason we want to hide
 	// ignore rules is so that we don't leak params that might be in them.

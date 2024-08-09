@@ -22,6 +22,8 @@ const (
 	GetFuncName      = "get"
 )
 
+var invalidChars = []string{"?"}
+
 // CommitNumberAnomalyMap is a map of Anomaly, keyed by commit number.
 type CommitNumberAnomalyMap map[types.CommitNumber]Anomaly
 
@@ -106,15 +108,19 @@ func (anomaly *AnomalyForRevision) GetTestPath() string {
 
 // RevisionInfo defines struct to contain revision information
 type RevisionInfo struct {
-	Master        string `json:"master"`
-	Bot           string `json:"bot"`
-	Benchmark     string `json:"benchmark"`
-	StartRevision int    `json:"start_revision"`
-	EndRevision   int    `json:"end_revision"`
-	TestPath      string `json:"test"`
-	IsImprovement bool   `json:"is_improvement"`
-	BugId         string `json:"bug_id"`
-	ExploreUrl    string `json:"explore_url"`
+	Master        string   `json:"master"`
+	Bot           string   `json:"bot"`
+	Benchmark     string   `json:"benchmark"`
+	StartRevision int      `json:"start_revision"`
+	EndRevision   int      `json:"end_revision"`
+	StartTime     int64    `json:"start_time"`
+	EndTime       int64    `json:"end_time"`
+	TestPath      string   `json:"test"`
+	IsImprovement bool     `json:"is_improvement"`
+	BugId         string   `json:"bug_id"`
+	ExploreUrl    string   `json:"explore_url"`
+	Query         string   `json:"query"`
+	AnomalyIds    []string `json:"anomaly_ids"`
 }
 
 // GetAnomaliesRequest struct to request anomalies from the chromeperf api.
@@ -165,7 +171,7 @@ type AnomalyApiClient interface {
 	ReportRegression(ctx context.Context, testPath string, startCommitPosition int32, endCommitPosition int32, projectId string, isImprovement bool, botName string, internal bool, medianBefore float32, medianAfter float32) (*ReportRegressionResponse, error)
 
 	// GetAnomalyFromUrlSafeKey returns the anomaly details based on the urlsafe key.
-	GetAnomalyFromUrlSafeKey(ctx context.Context, key string) (startCommit int, endCommit int, queryParams map[string][]string, err error)
+	GetAnomalyFromUrlSafeKey(ctx context.Context, key string) (map[string][]string, Anomaly, error)
 
 	// GetAnomalies retrieves anomalies for a given set of traces within the supplied commit positions.
 	GetAnomalies(ctx context.Context, traceNames []string, startCommitPosition int, endCommitPosition int) (AnomalyMap, error)
@@ -246,25 +252,25 @@ func (cp *anomalyApiClientImpl) ReportRegression(
 }
 
 // GetAnomalyFromUrlSafeKey returns the anomaly details based on the urlsafe key.
-func (cp *anomalyApiClientImpl) GetAnomalyFromUrlSafeKey(ctx context.Context, key string) (int, int, map[string][]string, error) {
+func (cp *anomalyApiClientImpl) GetAnomalyFromUrlSafeKey(ctx context.Context, key string) (map[string][]string, Anomaly, error) {
 	getAnomaliesResp := &GetAnomaliesResponse{}
+	var anomaly Anomaly
 	err := cp.chromeperfClient.sendGetRequest(ctx, AnomalyAPIName, GetFuncName, url.Values{"key": {key}}, getAnomaliesResp)
 	if err != nil {
-		return -1, -1, nil, skerr.Wrapf(err, "Failed to get anomaly data based on url safe key: %s", key)
+		return nil, anomaly, skerr.Wrapf(err, "Failed to get anomaly data based on url safe key: %s", key)
 	}
 
-	var startCommit, endCommit int
 	var queryParams map[string][]string
+
 	if len(getAnomaliesResp.Anomalies) > 0 {
-		for testPath, anomaly := range getAnomaliesResp.Anomalies {
+		for testPath, respAnomaly := range getAnomaliesResp.Anomalies {
 			queryParams = getParams(testPath)
-			startCommit = anomaly[0].StartRevision
-			endCommit = anomaly[0].EndRevision
+			anomaly = respAnomaly[0]
 			break
 		}
 	}
 
-	return startCommit, endCommit, queryParams, nil
+	return queryParams, anomaly, nil
 }
 
 // GetAnomalies implements AnomalyApiClient, it calls chrome perf API to fetch anomlies.
@@ -461,6 +467,9 @@ func getParams(testPath string) map[string][]string {
 
 	i := 0
 	for _, testPart := range testPathParts {
+		for _, invalidChar := range invalidChars {
+			testPart = strings.ReplaceAll(testPart, invalidChar, "_")
+		}
 		if _, ok := params[paramKeys[i]]; !ok {
 			params[paramKeys[i]] = []string{testPart}
 		} else {

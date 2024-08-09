@@ -30,6 +30,7 @@ const (
 	DefaultNumWorkers = 10
 
 	syncTimeout       = 15 * time.Minute
+	metricSyncing     = "task_scheduler_jc_syncing"
 	metricSyncTimeout = "task_scheduler_sync_timeout"
 	metricWorkerBusy  = "task_scheduler_jc_worker_busy"
 
@@ -56,14 +57,9 @@ func New(ctx context.Context, repos repograph.Map, depotToolsDir, workdir string
 		workdir:       workdir,
 	}
 	for i := 0; i < numWorkers; i++ {
-		m := metrics2.GetInt64Metric(metricWorkerBusy, map[string]string{
-			"worker": strconv.Itoa(i),
-		})
 		go func(i int) {
 			for f := range queue {
-				m.Update(1)
 				f(i)
-				m.Update(0)
 			}
 		}(i)
 	}
@@ -84,8 +80,28 @@ func (s *Syncer) Close() error {
 // This method uses a worker pool; if all workers are busy, it will block until
 // one is free.
 func (s *Syncer) TempGitRepo(ctx context.Context, rs types.RepoState, fn func(*git.TempCheckout) error) error {
+	tags := map[string]string{
+		"repo":      rs.Repo,
+		"revision":  rs.Revision,
+		"issue":     rs.Issue,
+		"patchset":  rs.Patchset,
+		"patchrepo": rs.PatchRepo,
+		"server":    rs.Server,
+	}
+	m := metrics2.NewTimer(metricSyncing, tags)
+	m.Start()
+	defer func() {
+		m.Stop()
+	}()
 	rvErr := make(chan error)
 	s.queue <- func(workerId int) {
+		m := metrics2.GetInt64Metric(metricWorkerBusy, map[string]string{
+			"worker": strconv.Itoa(workerId),
+		}, tags)
+		m.Update(1)
+		defer func() {
+			m.Update(0)
+		}()
 		tmp, err2 := os.MkdirTemp("", "")
 		if err2 != nil {
 			rvErr <- err2
@@ -240,7 +256,9 @@ func tempGitRepoGclient(ctx context.Context, rs types.RepoState, depotToolsDir, 
 	env := []string{
 		"DEPOT_TOOLS_METRICS=0",
 		"DEPOT_TOOLS_UPDATE=0",
-		fmt.Sprintf("GIT_CACHE_PATH=%s", gitCacheDir),
+		// TODO(borenet): Re-enable caches after ensuring that removing them
+		// doesn't help.
+		//fmt.Sprintf("GIT_CACHE_PATH=%s", gitCacheDir),
 		fmt.Sprintf("HOME=%s", tmp),
 		fmt.Sprintf("INFRA_GIT_WRAPPER_HOME=%s", tmp),
 		fmt.Sprintf("PATH=%s", strings.Join(paths, ":")),
@@ -249,7 +267,7 @@ func tempGitRepoGclient(ctx context.Context, rs types.RepoState, depotToolsDir, 
 		fmt.Sprintf("GIT_COOKIES_PATH=%s", types.GitCookiesPath),
 	}
 
-	spec := fmt.Sprintf("cache_dir = '%s'\nsolutions = [{'deps_file': '.DEPS.git', 'managed': False, 'name': '%s', 'url': '%s'}]", gitCacheDir, projectName, rs.Repo)
+	spec := fmt.Sprintf("solutions = [{'deps_file': '.DEPS.git', 'managed': False, 'name': '%s', 'url': '%s'}]", projectName, rs.Repo)
 	if _, err := exec.RunCommand(ctx, &exec.Command{
 		Name: vpythonBinary,
 		Args: []string{"-u", gclientPath, "config", fmt.Sprintf("--spec=%s", spec)},
@@ -269,7 +287,8 @@ func tempGitRepoGclient(ctx context.Context, rs types.RepoState, depotToolsDir, 
 		vpythonBinary, "-u", gclientPath, "sync",
 		"--revision", fmt.Sprintf("%s@%s", projectName, rs.Revision),
 		"--reset", "--force", "--ignore_locks", "--nohooks", "--noprehooks",
-		"-v", "-v", "-v",
+		"--shallow",
+		"-v", "-v", "-v", // Delete this if/when logs are too verbose.
 	}
 	if ctx.Value(SkipDownloadTopicsKey) == nil {
 		cmd = append(cmd, "--download-topics")

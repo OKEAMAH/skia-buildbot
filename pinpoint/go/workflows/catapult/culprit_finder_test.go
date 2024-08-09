@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.skia.org/infra/pinpoint/go/common"
 	"go.skia.org/infra/pinpoint/go/workflows"
 	"go.skia.org/infra/pinpoint/go/workflows/internal"
 	pinpoint_proto "go.skia.org/infra/pinpoint/proto/v1"
@@ -58,9 +59,14 @@ func TestCulpritFinder_NoCulpritsAfterBisect_ReturnsRegression(t *testing.T) {
 	env.RegisterWorkflowWithOptions(internal.PairwiseWorkflow, workflow.RegisterOptions{Name: workflows.PairwiseWorkflow})
 	env.RegisterWorkflowWithOptions(CatapultBisectWorkflow, workflow.RegisterOptions{Name: workflows.CatapultBisect})
 
-	env.OnWorkflow(workflows.PairwiseWorkflow, mock.Anything, mock.Anything).Return(&pinpoint_proto.PairwiseExecution{
-		Significant: true,
-	}, nil).Once()
+	env.OnWorkflow(workflows.PairwiseWorkflow, mock.Anything, mock.Anything).Return(
+		&pinpoint_proto.PairwiseExecution{
+			Significant: true,
+			Statistic: &pinpoint_proto.PairwiseExecution_WilcoxonResult{
+				ControlMedian:   0.1, // arbitrary values
+				TreatmentMedian: 0.2,
+			},
+		}, nil).Once()
 	env.OnWorkflow(workflows.CatapultBisect, mock.Anything, mock.Anything).Return(&pinpoint_proto.BisectExecution{}, nil).Once()
 
 	env.ExecuteWorkflow(CulpritFinderWorkflow, generateCulpritFinderParams())
@@ -83,9 +89,24 @@ func TestCulpritFinder_CulpritsVerified_ReturnsCulprits(t *testing.T) {
 	env.RegisterWorkflowWithOptions(CatapultBisectWorkflow, workflow.RegisterOptions{Name: workflows.CatapultBisect})
 
 	fakeCulprits := []*pinpoint_proto.CombinedCommit{
-		{Main: &pinpoint_proto.Commit{GitHash: "commit1"}},
-		{Main: &pinpoint_proto.Commit{GitHash: "commit2"}},
-		{Main: &pinpoint_proto.Commit{GitHash: "commit3"}},
+		{Main: common.NewChromiumCommit("commit2")},
+		{Main: common.NewChromiumCommit("commit4")},
+		{Main: common.NewChromiumCommit("commit6")},
+	}
+
+	fakeCulpritPairs := []*pinpoint_proto.Culprit{
+		{
+			Prior:   &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit1")},
+			Culprit: &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit2")},
+		},
+		{
+			Prior:   &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit3")},
+			Culprit: &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit4")},
+		},
+		{
+			Prior:   &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit5")},
+			Culprit: &pinpoint_proto.CombinedCommit{Main: common.NewChromiumCommit("commit6")},
+		},
 	}
 
 	rc := make(chan *pinpoint_proto.PairwiseExecution, len(fakeCulprits))
@@ -100,11 +121,17 @@ func TestCulpritFinder_CulpritsVerified_ReturnsCulprits(t *testing.T) {
 			Culprit: fakeCulprits[i],
 		}
 	}
-	env.OnWorkflow(workflows.PairwiseWorkflow, mock.Anything, mock.Anything).Return(&pinpoint_proto.PairwiseExecution{
-		Significant: true,
-	}, nil).Once()
+	env.OnWorkflow(workflows.PairwiseWorkflow, mock.Anything, mock.Anything).Return(
+		&pinpoint_proto.PairwiseExecution{
+			Significant: true,
+			Statistic: &pinpoint_proto.PairwiseExecution_WilcoxonResult{
+				ControlMedian:   0.1, // arbitrary values
+				TreatmentMedian: 0.2,
+			},
+		}, nil).Once()
 	env.OnWorkflow(workflows.CatapultBisect, mock.Anything, mock.Anything).Return(&pinpoint_proto.BisectExecution{
-		Culprits: fakeCulprits,
+		Culprits:         fakeCulprits,
+		DetailedCulprits: fakeCulpritPairs,
 	}, nil).Once()
 	env.OnWorkflow(workflows.PairwiseWorkflow, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, pp *workflows.PairwiseParams) (*pinpoint_proto.PairwiseExecution, error) {
 		return <-rc, nil

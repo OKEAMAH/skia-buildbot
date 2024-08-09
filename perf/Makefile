@@ -219,11 +219,17 @@ run-demo-instance:
 run-demo-maintenance:
 	$(BAZEL) build --config=mayberemote -c dbg //perf/...
 	$(BAZEL) run --config=mayberemote -c dbg //perf/go/initdemo:initdemo
+	../_bazel_bin/perf/go/perfserver/perfserver_/perfserver ingest \
+		--local \
+		--config_filename=./configs/demo.json \
+		--connection_string=postgresql://root@127.0.0.1:26257/demo?sslmode=disable
 	../_bazel_bin/perf/go/perfserver/perfserver_/perfserver maintenance \
 		--local \
 		--config_filename=./configs/demo.json \
 		--connection_string=postgresql://root@127.0.0.1:26257/demo?sslmode=disable \
-		--migrate_regressions
+		--migrate_regressions \
+		--refresh_query_cache \
+		--tiles_for_query_cache=5
 
 run-demo-backend:
 	$(BAZEL) build --config=mayberemote -c dbg //perf/...

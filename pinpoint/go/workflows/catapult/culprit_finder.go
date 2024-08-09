@@ -2,8 +2,10 @@ package catapult
 
 import (
 	"errors"
+	"fmt"
 
 	"go.skia.org/infra/go/skerr"
+	"go.skia.org/infra/pinpoint/go/common"
 	"go.skia.org/infra/pinpoint/go/workflows"
 	pinpoint_proto "go.skia.org/infra/pinpoint/proto/v1"
 	"go.temporal.io/sdk/workflow"
@@ -20,13 +22,17 @@ func CulpritFinderWorkflow(ctx workflow.Context, cfp *workflows.CulpritFinderPar
 
 	pp := workflows.PairwiseParams{
 		Request: &pinpoint_proto.SchedulePairwiseRequest{
-			StartGitHash:         cfp.Request.StartGitHash,
-			EndGitHash:           cfp.Request.EndGitHash,
+			StartCommit: &pinpoint_proto.CombinedCommit{
+				Main: common.NewChromiumCommit(cfp.Request.StartGitHash),
+			},
+			EndCommit: &pinpoint_proto.CombinedCommit{
+				Main: common.NewChromiumCommit(cfp.Request.EndGitHash),
+			},
 			Configuration:        cfp.Request.Configuration,
 			Benchmark:            cfp.Request.Benchmark,
 			Story:                cfp.Request.Story,
 			Chart:                cfp.Request.Chart,
-			Statistic:            cfp.Request.Statistic,
+			AggregationMethod:    cfp.Request.AggregationMethod,
 			InitialAttemptCount:  "30",
 			ImprovementDirection: cfp.Request.ImprovementDirection,
 		},
@@ -44,6 +50,8 @@ func CulpritFinderWorkflow(ctx workflow.Context, cfp *workflows.CulpritFinderPar
 		}, nil
 	}
 
+	magnitude := fmt.Sprintf("%f", pe.Statistic.TreatmentMedian-pe.Statistic.ControlMedian)
+
 	bp := &workflows.BisectParams{
 		Request: &pinpoint_proto.ScheduleBisectRequest{
 			ComparisonMode:       "performance",
@@ -53,11 +61,12 @@ func CulpritFinderWorkflow(ctx workflow.Context, cfp *workflows.CulpritFinderPar
 			Benchmark:            cfp.Request.Benchmark,
 			Story:                cfp.Request.Story,
 			Chart:                cfp.Request.Chart,
-			AggregationMethod:    cfp.Request.Statistic,
-			ComparisonMagnitude:  cfp.Request.ComparisonMagnitude,
+			AggregationMethod:    cfp.Request.AggregationMethod,
+			ComparisonMagnitude:  magnitude,
 			InitialAttemptCount:  "20",
 			ImprovementDirection: cfp.Request.ImprovementDirection,
 		},
+		Production: cfp.Production,
 	}
 	var be *pinpoint_proto.BisectExecution
 	if err := workflow.ExecuteChildWorkflow(ctx, workflows.CatapultBisect, bp).Get(ctx, &be); err != nil {
@@ -89,11 +98,11 @@ func verifyCulprits(ctx workflow.Context, be *pinpoint_proto.BisectExecution, cf
 	ec := workflow.NewBufferedChannel(ctx, len(be.Culprits))
 	wg := workflow.NewWaitGroup(ctx)
 	wg.Add(len(be.Culprits))
-	for _, culprit := range be.Culprits {
+	for _, culpritPair := range be.DetailedCulprits {
 		workflow.Go(ctx, func(gCtx workflow.Context) {
 			defer wg.Done()
 
-			exec, err := runCulpritVerification(gCtx, culprit, cfp)
+			exec, err := runCulpritVerification(gCtx, culpritPair, cfp)
 
 			if err != nil {
 				ec.Send(gCtx, err)
@@ -125,20 +134,16 @@ func verifyCulprits(ctx workflow.Context, be *pinpoint_proto.BisectExecution, cf
 }
 
 // runCulpritVerification triggers a culprit verification workflow and returns the result
-func runCulpritVerification(ctx workflow.Context, culprit *pinpoint_proto.CombinedCommit, cfp *workflows.CulpritFinderParams) (*pinpoint_proto.PairwiseExecution, error) {
+func runCulpritVerification(ctx workflow.Context, culpritPair *pinpoint_proto.Culprit, cfp *workflows.CulpritFinderParams) (*pinpoint_proto.PairwiseExecution, error) {
 	pp := workflows.PairwiseParams{
 		Request: &pinpoint_proto.SchedulePairwiseRequest{
-			// TODO(b/340220164): compare against the previous commit instead of the commit
-			// at the start of the regression range (requires changes to bisectExecution)
-			StartGitHash: cfp.Request.StartGitHash,
-			// TODO(b/340220827): modify pairwise to support commits with modified deps (otherwise
-			// culprit verification doesn't work on commits from rolls)
-			EndGitHash:           culprit.Main.GitHash,
+			StartCommit:          culpritPair.Prior,
+			EndCommit:            culpritPair.Culprit,
 			Configuration:        cfp.Request.Configuration,
 			Benchmark:            cfp.Request.Benchmark,
 			Story:                cfp.Request.Story,
 			Chart:                cfp.Request.Chart,
-			Statistic:            cfp.Request.Statistic,
+			AggregationMethod:    cfp.Request.AggregationMethod,
 			InitialAttemptCount:  "30",
 			ImprovementDirection: cfp.Request.ImprovementDirection,
 		},

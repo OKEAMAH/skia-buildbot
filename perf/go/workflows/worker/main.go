@@ -15,9 +15,9 @@ import (
 var (
 	// Run the following command to portforward Temporal service so the client can connect to it.
 	// kubectl port-forward service/temporal --address 0.0.0.0 -n temporal 7233:7233
-	hostPort  = flag.String("host_port", "localhost:7233", "Host the worker connects to.")
+	hostPort  = flag.String("hostPort", "localhost:7233", "Host the worker connects to.")
 	namespace = flag.String("namespace", "default", "The namespace the worker registered to.")
-	taskQueue = flag.String("task_queue", "localhost.dev", "Task queue name registered to worker services.")
+	taskQueue = flag.String("taskQueue", "localhost.dev", "Task queue name registered to worker services.")
 )
 
 func main() {
@@ -42,6 +42,9 @@ func main() {
 	agsa := &internal.AnomalyGroupServiceActivity{}
 	w.RegisterActivity(agsa)
 	w.RegisterWorkflowWithOptions(internal.MaybeTriggerBisectionWorkflow, workflow.RegisterOptions{Name: workflows.MaybeTriggerBisection})
+
+	gsa := &internal.GerritServiceActivity{}
+	w.RegisterActivity(gsa)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {

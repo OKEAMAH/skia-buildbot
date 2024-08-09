@@ -31,6 +31,9 @@ sk_element(
         "//elements-sk/modules/toast-sk",
         "//perf/modules/anomaly-sk",
         "//perf/modules/plot-summary-sk",
+        "//perf/modules/picker-field-sk",
+        "//perf/modules/chart-tooltip-sk",
+        "//perf/modules/point-links-sk",
     ],
     ts_deps = [
         "//infra-sk/modules/ElementSk:index_ts_lib",
@@ -40,6 +43,7 @@ sk_element(
         "//perf/modules/progress:progress_ts_lib",
         "//perf/modules/window:window_ts_lib",
         "//perf/modules/pivotutil:index_ts_lib",
+        "//infra-sk/modules:dom_ts_lib",
         "//infra-sk/modules:linkify_ts_lib",
         "//perf/modules/paramtools:index_ts_lib",
         "//perf/modules/csv:index_ts_lib",

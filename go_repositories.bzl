@@ -304,6 +304,19 @@ def go_repositories():
         version = "v0.0.0-20190913173617-a41fca850d0b",
     )
     go_repository(
+        name = "com_github_bsm_ginkgo_v2",
+        importpath = "github.com/bsm/ginkgo/v2",
+        sum = "h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=",
+        version = "v2.12.0",
+    )
+    go_repository(
+        name = "com_github_bsm_gomega",
+        importpath = "github.com/bsm/gomega",
+        sum = "h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=",
+        version = "v1.27.10",
+    )
+
+    go_repository(
         name = "com_github_burntsushi_toml",
         importpath = "github.com/BurntSushi/toml",
         sum = "h1:ksErzDEI1khOiGPgpwuI7x2ebx/uXQNw7xJpn9Eq1+I=",
@@ -539,6 +552,12 @@ def go_repositories():
         importpath = "github.com/dgrijalva/jwt-go",
         sum = "h1:7qlOGliEKZXTDg6OTjfoBKDXWrumCAMpl/TFQ4/5kLM=",
         version = "v3.2.0+incompatible",
+    )
+    go_repository(
+        name = "com_github_dgryski_go_rendezvous",
+        importpath = "github.com/dgryski/go-rendezvous",
+        sum = "h1:lO4WD4F/rVNCu3HqELle0jiPLLBs70cWOduZpkS1E78=",
+        version = "v0.0.0-20200823014737-9f7001d12a5f",
     )
 
     go_repository(
@@ -1488,6 +1507,12 @@ def go_repositories():
         sum = "h1:41Ip0zITnmWNR/vHV+S4m+VoUivnWY5E4OJfLZjCJMA=",
         version = "v1.2.0",
     )
+    go_repository(
+        name = "com_github_johncgriffin_overflow",
+        importpath = "github.com/JohnCGriffin/overflow",
+        sum = "h1:RGWPOewvKIROun94nF7v2cua9qP+thov/7M50KEoeSU=",
+        version = "v0.0.0-20211019200055-46fa312c352c",
+    )
 
     go_repository(
         name = "com_github_jonboulle_clockwork",
@@ -2186,6 +2211,18 @@ def go_repositories():
         sum = "h1:lZH+W4XOLIq88U5MIHOsLec7+R62uhz3bIi2yn0Sg8o=",
         version = "v2.8.1",
     )
+    go_repository(
+        name = "com_github_redis_go_redis_v9",
+        importpath = "github.com/redis/go-redis/v9",
+        sum = "h1:fOAp1/uJG+ZtcITgZOfYFmTKPE7n4Vclj1wZFgRciUU=",
+        version = "v9.5.3",
+    )
+    go_repository(
+        name = "com_github_remyoudompheng_bigfft",
+        importpath = "github.com/remyoudompheng/bigfft",
+        sum = "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=",
+        version = "v0.0.0-20230129092748-24d4a6f8daec",
+    )
 
     go_repository(
         name = "com_github_robertkrimen_otto",
@@ -2661,6 +2698,12 @@ def go_repositories():
         importpath = "github.com/yusufpapurcu/wmi",
         sum = "h1:KBNDSne4vP5mbSWnJbO+51IMOXJB67QiYCSBrubbPRg=",
         version = "v1.2.2",
+    )
+    go_repository(
+        name = "com_github_zeebo_assert",
+        importpath = "github.com/zeebo/assert",
+        sum = "h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=",
+        version = "v1.3.0",
     )
 
     go_repository(
@@ -3427,6 +3470,12 @@ def go_repositories():
         sum = "h1:qocsqETmLAl34mSa01hKZjcqAvt699gaoFbooGGMvaM=",
         version = "v1.12.3",
     )
+    go_repository(
+        name = "com_lukechampine_uint128",
+        importpath = "lukechampine.com/uint128",
+        sum = "h1:mBi/5l91vocEN8otkC5bDLhi2KdCticRiwbdB0O+rjI=",
+        version = "v1.2.0",
+    )
 
     go_repository(
         name = "com_shuralyov_dmitri_gpu_mtl",
@@ -3869,6 +3918,7 @@ def go_repositories():
     go_repository(
         name = "io_temporal_go_sdk",
         importpath = "go.temporal.io/sdk",
+        patches = ["//temporal:sdk-go.diff"],
         sum = "h1:Cqyujbnt831agvkiFrJwZHVWT52kAUy4m2XyUsQpjZE=",
         version = "v1.25.2-0.20240108215803-6244097c5aca",
     )
@@ -4071,6 +4121,60 @@ def go_repositories():
         importpath = "gonum.org/v1/gonum",
         sum = "h1:xKuo6hzt+gMav00meVPUlXwSdoEJP46BR+wdxQEFK2o=",
         version = "v0.12.0",
+    )
+    go_repository(
+        name = "org_modernc_cc_v3",
+        importpath = "modernc.org/cc/v3",
+        sum = "h1:P3g79IUS/93SYhtoeaHW+kRCIrYaxJ27MFPv+7kaTOw=",
+        version = "v3.40.0",
+    )
+    go_repository(
+        name = "org_modernc_ccgo_v3",
+        importpath = "modernc.org/ccgo/v3",
+        sum = "h1:Mkgdzl46i5F/CNR/Kj80Ri59hC8TKAhZrYSaqvkwzUw=",
+        version = "v3.16.13",
+    )
+    go_repository(
+        name = "org_modernc_libc",
+        importpath = "modernc.org/libc",
+        sum = "h1:4U7v51GyhlWqQmwCHj28Rdq2Yzwk55ovjFrdPjs8Hb0=",
+        version = "v1.22.2",
+    )
+    go_repository(
+        name = "org_modernc_mathutil",
+        importpath = "modernc.org/mathutil",
+        sum = "h1:rV0Ko/6SfM+8G+yKiyI830l3Wuz1zRutdslNoQ0kfiQ=",
+        version = "v1.5.0",
+    )
+    go_repository(
+        name = "org_modernc_memory",
+        importpath = "modernc.org/memory",
+        sum = "h1:N+/8c5rE6EqugZwHii4IFsaJ7MUhoWX07J5tC/iI5Ds=",
+        version = "v1.5.0",
+    )
+    go_repository(
+        name = "org_modernc_opt",
+        importpath = "modernc.org/opt",
+        sum = "h1:3XOZf2yznlhC+ibLltsDGzABUGVx8J6pnFMS3E4dcq4=",
+        version = "v0.1.3",
+    )
+    go_repository(
+        name = "org_modernc_sqlite",
+        importpath = "modernc.org/sqlite",
+        sum = "h1:S2uFiaNPd/vTAP/4EmyY8Qe2Quzu26A2L1e25xRNTio=",
+        version = "v1.18.2",
+    )
+    go_repository(
+        name = "org_modernc_strutil",
+        importpath = "modernc.org/strutil",
+        sum = "h1:fNMm+oJklMGYfU9Ylcywl0CO5O6nTfaowNsh2wpPjzY=",
+        version = "v1.1.3",
+    )
+    go_repository(
+        name = "org_modernc_token",
+        importpath = "modernc.org/token",
+        sum = "h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=",
+        version = "v1.1.0",
     )
 
     go_repository(

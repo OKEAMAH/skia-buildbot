@@ -395,6 +395,7 @@ export interface AnomalyData {
   x: number;
   y: number;
   anomaly: Anomaly;
+  highlight: boolean;
 }
 
 export interface MousePosition {
@@ -447,7 +448,10 @@ export type ZoomRange = [number, number] | null;
 export interface PlotSimpleSkTraceEventDetails {
   x: number;
   y: number;
-
+  // DOM position of x in Pixels
+  xPos?: number;
+  // DOM position of y in Pixels
+  yPos?: number;
   // The trace id.
   name: string;
 }
@@ -683,6 +687,8 @@ export class PlotSimpleSk extends ElementSk {
 
   private ANOMALY_BACKGROUND!: string; // CSS color.
 
+  private ANOMALY_HIGHLIGHT_COLOR!: string; // CSS color.
+
   private REGRESSION_COLOR!: string; // CSS color.
 
   private IMPROVEMENT_COLOR!: string; // CSS color.
@@ -873,6 +879,8 @@ export class PlotSimpleSk extends ElementSk {
       const detail = {
         x: closest.sx,
         y: closest.sy,
+        xPos: closest.x / this.scale,
+        yPos: closest.y / this.scale,
         name: closest.name,
       };
       this.dispatchEvent(
@@ -1113,6 +1121,7 @@ export class PlotSimpleSk extends ElementSk {
     this.ANOMALY_BACKGROUND = style.getPropertyValue('--on-surface');
     this.IMPROVEMENT_COLOR = style.getPropertyValue('--success');
     this.REGRESSION_COLOR = style.getPropertyValue('--failure');
+    this.ANOMALY_HIGHLIGHT_COLOR = style.getPropertyValue('--warning');
 
     // Now override with CSS variables if they are present.
     const onBackground = style.getPropertyValue('--on-backgroud');
@@ -1192,6 +1201,8 @@ export class PlotSimpleSk extends ElementSk {
         const detail = {
           x: closest.sx,
           y: closest.sy,
+          xPos: closest.x / this.scale,
+          yPos: closest.y / this.scale,
           name: closest.name,
         };
         if (detail.x !== this.hoverPt.x || detail.y !== this.hoverPt.y) {
@@ -1783,6 +1794,19 @@ export class PlotSimpleSk extends ElementSk {
         ctx.fillStyle = this.ANOMALY_BACKGROUND;
 
         ctx.fill(anomalyPath);
+
+        // If the anomaly is marked for highlighting, draw a circle around
+        // the icon with the highlight color.
+        if (anomalyData.highlight) {
+          const highlightPath = new Path2D();
+          const highlightRadius = this.ANOMALY_RADIUS + 2 * this.scale;
+          highlightPath.moveTo(cx + highlightRadius, cy);
+          highlightPath.arc(cx, cy, highlightRadius, 0, 2 * Math.PI);
+
+          ctx.fillStyle = this.ANOMALY_HIGHLIGHT_COLOR;
+          ctx.fill(highlightPath);
+        }
+
         let symbol = '';
         if (anomaly.is_improvement) {
           ctx.fillStyle = this.IMPROVEMENT_COLOR;
