@@ -4,7 +4,7 @@
  *
  * Page to view details about a digest. This includes other digests similar to it and trace history.
  */
-import { html } from 'lit-html';
+import { html } from 'lit/html.js';
 import { define } from '../../../elements-sk/modules/define';
 import { jsonOrThrow } from '../../../infra-sk/modules/jsonOrThrow';
 import { stateReflector } from '../../../infra-sk/modules/stateReflector';
@@ -54,11 +54,13 @@ export class DetailsPageSk extends ElementSk {
     }
     return html`
       <digest-details-sk
+        class="overview"
         .groupings=${ele.groupings}
         .commits=${ele.commits}
         .changeListID=${ele.changeListID}
         .crs=${ele.crs}
-        .details=${ele.details}>
+        .details=${ele.details}
+        @image_compare_size_toggled=${ele.enableFullWidthComparison}>
       </digest-details-sk>
     `;
   };
@@ -175,6 +177,15 @@ export class DetailsPageSk extends ElementSk {
         this._render();
         sendFetchError(this, e, 'digest-details');
       });
+  }
+
+  private enableFullWidthComparison(e: CustomEvent) {
+    e.stopPropagation();
+    const digestDetail = this.querySelector('digest-details-sk');
+
+    if (digestDetail && digestDetail.classList) {
+      digestDetail.classList.remove('overview');
+    }
   }
 }
 

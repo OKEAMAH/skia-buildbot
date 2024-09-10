@@ -4,7 +4,7 @@
  *
  *  Allows trying out an alert by clustering over a range of commits.
  */
-import { html } from 'lit-html';
+import { html } from 'lit/html.js';
 import { define } from '../../../elements-sk/modules/define';
 import { fromObject } from '../../../infra-sk/modules/query';
 import { jsonOrThrow } from '../../../infra-sk/modules/jsonOrThrow';
@@ -21,6 +21,7 @@ import '../commit-detail-sk';
 import '../triage-status-sk';
 import '../alert-config-sk';
 import '../domain-picker-sk';
+import '../../../elements-sk/modules/icons/close-icon-sk';
 import {
   ParamSet,
   Alert,
@@ -97,6 +98,9 @@ export class ClusterLastNPageSk extends ElementSk {
         .config=${ele.state}
         .paramset=${ele.paramset}
         .key_order=${window.perf.key_order}></alert-config-sk>
+      <button id="clusterCloseIcon" @click=${ele.alertClose}>
+        <close-icon-sk></close-icon-sk>
+      </button>
       <div class="buttons">
         <button @click=${ele.alertClose}>Cancel</button>
         <button @click=${ele.alertAccept}>Accept</button>

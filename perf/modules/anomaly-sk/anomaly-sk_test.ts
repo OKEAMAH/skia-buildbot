@@ -1,6 +1,6 @@
 import { assert } from 'chai';
 import fetchMock from 'fetch-mock';
-import { TemplateResult, html } from 'lit-html';
+import { TemplateResult, html } from 'lit/html.js';
 import {
   Anomaly,
   AnomalyMap,
@@ -35,6 +35,10 @@ const dummyAnomaly = (): Anomaly => ({
   segment_size_before: 0,
   std_dev_before_anomaly: 0,
   t_statistic: 0,
+  subscription_name: '',
+  bug_component: '',
+  bug_labels: [],
+  bug_cc_emails: [],
 });
 
 describe('getAnomalyDataMap', () => {
@@ -74,6 +78,7 @@ describe('getAnomalyDataMap', () => {
         x: 2,
         y: 15,
         anomaly: anomalyA,
+        highlight: false,
       },
     ],
     traceB: [
@@ -81,6 +86,7 @@ describe('getAnomalyDataMap', () => {
         x: 2,
         y: 4,
         anomaly: anomalyB,
+        highlight: false,
       },
     ],
   };
@@ -88,7 +94,8 @@ describe('getAnomalyDataMap', () => {
     const anomalyDataMap = getAnomalyDataMap(
       dataframe.traceset,
       dataframe.header!,
-      anomalymap
+      anomalymap,
+      []
     );
     assert.deepEqual(anomalyDataMap, expectedAnomalyDataMap);
   });
@@ -104,7 +111,8 @@ describe('getAnomalyDataMap', () => {
     const dataMap = getAnomalyDataMap(
       dataframe.traceset,
       dataframe.header!,
-      anomalymap
+      anomalymap,
+      []
     );
     const expectedAnomalyMap: { [key: string]: AnomalyData[] } = {
       traceA: [
@@ -112,6 +120,7 @@ describe('getAnomalyDataMap', () => {
           x: 3,
           y: 200,
           anomaly: anomalyA,
+          highlight: false,
         },
       ],
     };
@@ -186,6 +195,8 @@ describe('formatRevisionRange', () => {
       trace_format: '',
       need_alert_action: false,
       bug_host_url: '',
+      git_repo_url: '',
+      keys_for_commit_range: [],
     };
   });
 

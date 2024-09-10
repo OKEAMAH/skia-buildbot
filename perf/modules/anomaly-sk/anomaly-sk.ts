@@ -3,7 +3,7 @@
  * @description <h2><code>anomaly-sk</code></h2>
  *
  */
-import { html, TemplateResult } from 'lit-html';
+import { html, TemplateResult } from 'lit/html.js';
 import { define } from '../../../elements-sk/modules/define';
 import { ElementSk } from '../../../infra-sk/modules/ElementSk';
 import {
@@ -56,7 +56,8 @@ import '../window/window';
 export const getAnomalyDataMap = (
   traceSet: TraceSet,
   header: (ColumnHeader | null)[],
-  anomalymap: AnomalyMap
+  anomalymap: AnomalyMap,
+  highlight_anomalies: string[]
 ): { [key: string]: AnomalyData[] } => {
   const anomalyDataMap: { [traceId: string]: AnomalyData[] } = {};
 
@@ -82,10 +83,17 @@ export const getAnomalyDataMap = (
               // we show the anomaly on the next available data point instead of not
               // displaying it at all.
               if (columnHeader!.offset >= cid) {
+                const currentAnomaly = cidAnomalyMap[cid];
+                // If the currentAnomaly is present in the highlight list, mark it for highlighting.
+                const highlight =
+                  highlight_anomalies !== null &&
+                  highlight_anomalies.includes(currentAnomaly.id.toString());
+
                 anomalyDataMap[traceId].push({
                   anomaly: cidAnomalyMap[cid],
                   x: i,
                   y: trace[i],
+                  highlight: highlight,
                 });
                 break;
               }
@@ -115,7 +123,7 @@ export class AnomalySk extends ElementSk {
     super(AnomalySk.template);
   }
 
-  private static formatNumber = (num: number): string =>
+  static formatNumber = (num: number): string =>
     num.toLocaleString('en-US', {
       maximumFractionDigits: 4,
     });
@@ -126,7 +134,7 @@ export class AnomalySk extends ElementSk {
       signDisplay: 'exceptZero',
     });
 
-  private static getPercentChange = (
+  static getPercentChange = (
     median_before: number,
     median_after: number
   ): number => {
@@ -161,11 +169,11 @@ export class AnomalySk extends ElementSk {
     this._render();
   };
 
-  private formatBug(bugId: number): TemplateResult {
+  static formatBug(bugHostUrl: string, bugId: number): TemplateResult {
     if (bugId === -1) {
       return html``;
     }
-    return html`<a href="${`${this.bugHostUrl}/${bugId}`}" target=_blank>${bugId}</td>`;
+    return html`<a href="${`${bugHostUrl}/${bugId}`}" target=_blank>${bugId}</td>`;
   }
 
   private static template = (ele: AnomalySk) => {
@@ -211,7 +219,7 @@ export class AnomalySk extends ElementSk {
             </tr>
             <tr>
               <th>Bug Id</th>
-              <td>${ele.formatBug(anomaly.bug_id)}</td>
+              <td>${AnomalySk.formatBug(ele.bugHostUrl, anomaly.bug_id)}</td>
             </tr>
           </tbody>
         </table>

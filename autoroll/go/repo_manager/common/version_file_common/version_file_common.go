@@ -214,17 +214,22 @@ func UpdateDep(ctx context.Context, primaryDep *config.DependencyConfig, rev *re
 	// Handle find-and-replace.
 	sklog.Infof("find and replace count: \"%d\".", len(primaryDep.FindAndReplace))
 	for _, f := range primaryDep.FindAndReplace {
-		sklog.Infof("replacing: \"%s\".", f)
-		oldContents, err := getFile(ctx, f)
-		if err != nil {
-			return nil, skerr.Wrap(err)
+		oldContents, ok := changes[f]
+		if !ok {
+			oldContents, err = getFile(ctx, f)
+			if err != nil {
+				return nil, skerr.Wrap(err)
+			}
 		}
 		newContents := oldContents
 		for oldRev, newRev := range replacements {
+			sklog.Infof("replacing \"%s\" with \"%s\" in %s.", oldRev, newRev, f)
 			newContents = strings.ReplaceAll(newContents, oldRev, newRev)
 		}
 		if oldContents != newContents {
 			changes[f] = newContents
+		} else if _, ok := changes[f]; !ok {
+			sklog.Warningf("find-and-replace made no changes to %s", f)
 		}
 	}
 

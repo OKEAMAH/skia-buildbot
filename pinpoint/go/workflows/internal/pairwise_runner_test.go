@@ -12,13 +12,20 @@ import (
 	"go.skia.org/infra/go/swarming"
 	"go.skia.org/infra/pinpoint/go/backends"
 	"go.skia.org/infra/pinpoint/go/bot_configs"
-	"go.skia.org/infra/pinpoint/go/midpoint"
+	"go.skia.org/infra/pinpoint/go/common"
 	"go.skia.org/infra/pinpoint/go/run_benchmark"
 	"go.skia.org/infra/pinpoint/go/workflows"
 	pb "go.skia.org/infra/pinpoint/proto/v1"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
+
+// generateValuesByChart generate mock values for TestRun
+func generateSingleValueByChart(chart string, values float64) map[string][]float64 {
+	return map[string][]float64{
+		chart: {values},
+	}
+}
 
 // generatePairwiseTestRuns generates mock test runs data for PairwiseRunner
 //
@@ -114,6 +121,181 @@ func TestGeneratePairIndices_GenerateRandomPair(t *testing.T) {
 	}
 }
 
+func TestPairwiseRun_isPairMissingData_GivenPairWithData_ReturnsFalse(t *testing.T) {
+	const mockChart = "cpu_percentage_time" // an arbitrary example chart
+	pr := PairwiseRun{
+		Left: CommitRun{
+			Runs: []*workflows.TestRun{
+				{
+					Values: map[string][]float64{mockChart: {1, 2, 3}, "anotherChart": {1}},
+				},
+				{
+					Values: map[string][]float64{mockChart: {1, 2, 3}},
+				},
+			},
+		},
+		Right: CommitRun{
+			Runs: []*workflows.TestRun{
+				{
+					Values: map[string][]float64{mockChart: {4}},
+				},
+				{
+					Values: map[string][]float64{mockChart: {6, 7}, "anotherChart": {1}},
+				},
+			},
+		},
+	}
+	for i := range pr.Left.Runs {
+		assert.False(t, pr.isPairMissingData(i, mockChart), fmt.Sprintf("iteration %d", i))
+	}
+}
+
+func TestPairwiseRun_isPairMissingData_GivenPairWithMissingData_ReturnsTrue(t *testing.T) {
+	const mockChart = "cpu_percentage_time" // an arbitrary example chart
+	verify := func(name string, pr PairwiseRun, i int) {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, pr.isPairMissingData(i, mockChart))
+		})
+	}
+	pr := PairwiseRun{
+		Left: CommitRun{
+			Runs: []*workflows.TestRun{
+				nil,
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Values: generateSingleValueByChart("anotherChart", 1)},
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+			},
+		},
+		Right: CommitRun{
+			Runs: []*workflows.TestRun{
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+				nil,
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Values: generateSingleValueByChart("another chart", 6)},
+			},
+		},
+	}
+	verify("left run is nil", pr, 0)
+	verify("left run values is nil", pr, 1)
+	verify("left run values does not have chart", pr, 2)
+	verify("right run is nil", pr, 3)
+	verify("right run values is nil", pr, 4)
+	verify("right run values does not have chart", pr, 5)
+}
+
+func TestPairwiseRun_balanceData_GivenValidInput_WAI(t *testing.T) {
+	const mockChart = "cpu_percentage_time" // an arbitrary example chart
+
+	pr := PairwiseRun{
+		Left: CommitRun{
+			Runs: []*workflows.TestRun{
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 1)},
+				{Values: generateSingleValueByChart(mockChart, 3)},
+				{Values: generateSingleValueByChart(mockChart, 5)},
+			},
+		},
+		Right: CommitRun{
+			Runs: []*workflows.TestRun{
+				{Values: generateSingleValueByChart(mockChart, 1.1)},
+				{Values: generateSingleValueByChart(mockChart, 3)},
+				{Values: generateSingleValueByChart(mockChart, 5)},
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Values: generateSingleValueByChart(mockChart, 6.3)},
+				{Values: generateSingleValueByChart(mockChart, 6.1)},
+			},
+		},
+		Order: []workflows.PairwiseOrder{
+			workflows.LeftThenRight,
+			workflows.LeftThenRight,
+			workflows.LeftThenRight,
+			workflows.RightThenLeft,
+			workflows.RightThenLeft,
+			workflows.RightThenLeft,
+		},
+	}
+	require.Equal(t, len(pr.Left.Runs), len(pr.Right.Runs), "test case not set up correctly. Number of left runs needs to equal number of right runs")
+	require.Equal(t, len(pr.Left.Runs), len(pr.Order), "test case not set up correctly. Number of orders needs to equal number of runs")
+	equalOrder := 0
+	for _, order := range pr.Order {
+		switch order {
+		case workflows.LeftThenRight:
+			equalOrder += 1
+		case workflows.RightThenLeft:
+			equalOrder -= 1
+		}
+	}
+	require.Zero(t, equalOrder, 0, "test case is not set up correctly. pr.Order must be balanced")
+	pr.removeMissingDataFromPairs(mockChart)
+	require.Equal(t, 1, pr.calcOrderBalance(mockChart), "require test case has imbalance on LeftThenRight by 1")
+	pr.removeDataUntilBalanced(mockChart)
+	assert.Zero(t, pr.calcOrderBalance(mockChart))
+	assert.Nil(t, pr.Right.Runs[1].Values[mockChart])
+	assert.NotNil(t, pr.Right.Runs[2].Values[mockChart])
+
+	pr = PairwiseRun{
+		Left: CommitRun{
+			Runs: []*workflows.TestRun{
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 1)},
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 1)},
+				{Values: generateSingleValueByChart(mockChart, 3)},
+				{Values: generateSingleValueByChart(mockChart, 5)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+				{Values: generateSingleValueByChart(mockChart, 7)},
+			},
+		},
+		Right: CommitRun{
+			Runs: []*workflows.TestRun{
+				{Values: generateSingleValueByChart(mockChart, 4)},
+				{Values: generateSingleValueByChart(mockChart, 1)},
+				{Values: generateSingleValueByChart(mockChart, 3)},
+				{Values: generateSingleValueByChart(mockChart, 5)},
+				{Values: generateSingleValueByChart(mockChart, 6)},
+				{Values: generateSingleValueByChart(mockChart, 7)},
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+				{Status: run_benchmark.State(backends.RunBenchmarkFailure)},
+			},
+		},
+		Order: []workflows.PairwiseOrder{
+			workflows.LeftThenRight,
+			workflows.LeftThenRight,
+			workflows.LeftThenRight,
+			workflows.LeftThenRight,
+			workflows.RightThenLeft,
+			workflows.RightThenLeft,
+			workflows.RightThenLeft,
+			workflows.RightThenLeft,
+		},
+	}
+	require.Equal(t, len(pr.Left.Runs), len(pr.Right.Runs), "test case not set up correctly. Number of left runs needs to equal number of right runs")
+	require.Equal(t, len(pr.Left.Runs), len(pr.Order), "test case not set up correctly. Number of orders needs to equal number of runs")
+	equalOrder = 0
+	for _, order := range pr.Order {
+		switch order {
+		case workflows.LeftThenRight:
+			equalOrder += 1
+		case workflows.RightThenLeft:
+			equalOrder -= 1
+		}
+	}
+	require.Zero(t, equalOrder, 0, "test case is not set up correctly. pr.Order must be balanced")
+	pr.removeMissingDataFromPairs(mockChart)
+	require.Equal(t, -2, pr.calcOrderBalance(mockChart), "require test case has imbalance on RightThenLeft by 2")
+	pr.removeDataUntilBalanced(mockChart)
+	assert.Zero(t, pr.calcOrderBalance(mockChart))
+	assert.Nil(t, pr.Left.Runs[0].Values[mockChart])
+	assert.Nil(t, pr.Left.Runs[1].Values[mockChart])
+	assert.NotNil(t, pr.Left.Runs[2].Values[mockChart])
+}
+
 func TestPairwiseCommitRunner_GivenValidInput_ShouldReturnValues(t *testing.T) {
 	const leftCommit = "573a50658f4301465569c3faf00a145093a1fe9b"
 	const rightCommit = "a633e198b79b2e0c83c72a3006cdffe642871e22"
@@ -129,8 +311,8 @@ func TestPairwiseCommitRunner_GivenValidInput_ShouldReturnValues(t *testing.T) {
 			Iterations:        30,
 		},
 		Seed:        seed,
-		LeftCommit:  midpoint.NewCombinedCommit(&pb.Commit{GitHash: leftCommit}),
-		RightCommit: midpoint.NewCombinedCommit(&pb.Commit{GitHash: rightCommit}),
+		LeftCommit:  common.NewCombinedCommit(&pb.Commit{GitHash: leftCommit}),
+		RightCommit: common.NewCombinedCommit(&pb.Commit{GitHash: rightCommit}),
 	}
 	target, err := bot_configs.GetIsolateTarget(p.BotConfig, p.Benchmark)
 	require.NoError(t, err)
@@ -143,28 +325,30 @@ func TestPairwiseCommitRunner_GivenValidInput_ShouldReturnValues(t *testing.T) {
 		"build59-h7--device2",
 	}
 
-	leftBuildChromeParams := workflows.BuildChromeParams{
+	leftBuildChromeParams := workflows.BuildParams{
 		WorkflowID: p.PinpointJobID,
 		Device:     p.BotConfig,
 		Target:     target,
 		Commit:     p.LeftCommit,
+		Project:    "chromium",
 	}
-	rightBuildChromeParams := workflows.BuildChromeParams{
+	rightBuildChromeParams := workflows.BuildParams{
 		WorkflowID: p.PinpointJobID,
 		Device:     p.BotConfig,
 		Target:     target,
 		Commit:     p.RightCommit,
+		Project:    "chromium",
 	}
 	leftBuild := &workflows.Build{
-		BuildChromeParams: workflows.BuildChromeParams{
-			Commit: midpoint.NewCombinedCommit(&pb.Commit{GitHash: leftCommit}),
+		BuildParams: workflows.BuildParams{
+			Commit: common.NewCombinedCommit(&pb.Commit{GitHash: leftCommit}),
 		},
 		Status: buildbucketpb.Status_SUCCESS,
 		CAS:    &apipb.CASReference{CasInstance: "projects/chrome-swarming/instances/default_instance", Digest: &apipb.Digest{Hash: "062ccf0a30a362d8e4df3c9b82172a78e3d62c2990eb30927f5863a6b08e80bb", SizeBytes: 810}},
 	}
 	rightBuild := &workflows.Build{
-		BuildChromeParams: workflows.BuildChromeParams{
-			Commit: midpoint.NewCombinedCommit(&pb.Commit{GitHash: rightCommit}),
+		BuildParams: workflows.BuildParams{
+			Commit: common.NewCombinedCommit(&pb.Commit{GitHash: rightCommit}),
 		},
 		Status: buildbucketpb.Status_SUCCESS,
 		CAS:    &apipb.CASReference{CasInstance: "projects/chrome-swarming/instances/default_instance", Digest: &apipb.Digest{Hash: "51845150f953c33ee4c0900589ba916ca28b7896806460aa8935c0de2b209db6", SizeBytes: 810}},
@@ -177,7 +361,7 @@ func TestPairwiseCommitRunner_GivenValidInput_ShouldReturnValues(t *testing.T) {
 	testSuite := &testsuite.WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 
-	env.RegisterWorkflowWithOptions(BuildChrome, workflow.RegisterOptions{Name: workflows.BuildChrome})
+	env.RegisterWorkflowWithOptions(BuildWorkflow, workflow.RegisterOptions{Name: workflows.BuildChrome})
 	env.RegisterWorkflowWithOptions(RunBenchmarkPairwiseWorkflow, workflow.RegisterOptions{Name: workflows.RunBenchmarkPairwise})
 
 	env.OnWorkflow(workflows.BuildChrome, mock.Anything, leftBuildChromeParams).Return(leftBuild, nil).Once()

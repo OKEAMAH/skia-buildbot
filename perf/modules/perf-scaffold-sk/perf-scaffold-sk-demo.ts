@@ -19,6 +19,8 @@ window.perf = {
   trace_format: '',
   need_alert_action: false,
   bug_host_url: '',
+  git_repo_url: '',
+  keys_for_commit_range: [],
 };
 
 document.querySelector('.component-goes-here')!.innerHTML = `

@@ -7,8 +7,8 @@ import (
 
 	buildbucketpb "go.chromium.org/luci/buildbucket/proto"
 	apipb "go.chromium.org/luci/swarming/proto/api_v2"
+	"go.skia.org/infra/pinpoint/go/common"
 	"go.skia.org/infra/pinpoint/go/compare"
-	"go.skia.org/infra/pinpoint/go/midpoint"
 	"go.skia.org/infra/pinpoint/go/run_benchmark"
 	pb "go.skia.org/infra/pinpoint/proto/v1"
 )
@@ -30,6 +30,8 @@ const (
 	PairwiseCommitsRunner             = "perf.pairwise_commits_runner"
 	PairwiseWorkflow                  = "perf.pairwise"
 	BugUpdate                         = "perf.bug_update"
+	TestAndExport                     = "perf.test_and_export"
+	CollectAndUpload                  = "perf.collect_and_upload"
 )
 
 const defaultPairwiseAttemptCount int32 = 30
@@ -38,13 +40,13 @@ const defaultPairwiseAttemptCount int32 = 30
 //
 // Each workflow defines its own struct for the params, this will ensure
 // the input parameter type safety, as well as expose them in a structured way.
-type BuildChromeParams struct {
+type BuildParams struct {
 	// WorkflowID is arbitrary string that tags the build.
 	// This is used to connect the downstream and know which build is used.
 	// This is usually the pinpoint job ID.
 	WorkflowID string
 	// Commit is the chromium commit hash.
-	Commit *midpoint.CombinedCommit
+	Commit *common.CombinedCommit
 	// Device is the name of the device, e.g. "linux-perf".
 	Device string
 	// Target is name of the build isolate target
@@ -52,12 +54,17 @@ type BuildChromeParams struct {
 	Target string
 	// Patch is the Gerrit patch included in the build.
 	Patch []*buildbucketpb.GerritChange
+	// Project is the project the Build workflow is being run for.
+	// For example, Chromium and V8 would be under project "chromium" and create
+	// a Chrome binary. AndroidX would have project "androidx" and generate
+	// Android X modules.
+	Project string
 }
 
 // Build stores the build from Buildbucket.
 type Build struct {
 	// The parameters used to make this build.
-	BuildChromeParams
+	BuildParams
 	// ID is the buildbucket ID of the Chrome build.
 	// https://github.com/luci/luci-go/blob/19a07406e/buildbucket/proto/build.proto#L138
 	ID int64
@@ -77,6 +84,18 @@ type TestRun struct {
 	CAS *apipb.CASReference
 	// Values is sampled values for each benchmark story.
 	Values map[string][]float64
+}
+
+// IsEmptyValues checks the TestRun if there are values at that chart
+func (tr *TestRun) IsEmptyValues(chart string) bool {
+	return tr == nil || tr.Values == nil || tr.Values[chart] == nil
+}
+
+// RemoveDataFromChart removes chart data from that TestRun
+func (tr *TestRun) RemoveDataFromChart(chart string) {
+	if tr.Values != nil {
+		tr.Values[chart] = nil
+	}
 }
 
 // PairwiseOrder indicates in a pairwise run, which commit ran first
@@ -205,4 +224,10 @@ func (pp *PairwiseParams) GetImprovementDirection() compare.ImprovementDir {
 type CulpritFinderParams struct {
 	// CulpritFinderParams embeds the pinpoint proto ScheduleCulpritFinderRequest
 	Request *pb.ScheduleCulpritFinderRequest
+	// Production if true indicates the workflow is intended to be run on production
+	// and not the dev or staging environment.
+	// Used to determine whether to write to Pinpoint prod or staging.
+	Production bool
+	// A set of parameters used for callback to culprit service if any culprit is found.
+	CallbackParams *pb.CulpritProcessingCallbackParams
 }

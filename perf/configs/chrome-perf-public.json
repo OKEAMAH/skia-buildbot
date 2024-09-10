@@ -14,7 +14,7 @@
         "notifications": "none"
     },
     "culprit_notify_config": {
-        "notifications": "markdown_issuetracker",
+        "notification_type": "issuetracker",
         "issue_tracker_api_key_secret_project": "skia-infra-public",
         "issue_tracker_api_key_secret_name": "perf-issue-tracker-apikey"
     },
@@ -88,7 +88,11 @@
             "stat": ["value"]
         },
         "default_url_values": {
-            "summary": "true"
+            "plotSummary": "true",
+            "useTestPicker": "true",
+            "showZero": "false",
+            "enable_chart_tooltip": "true",
+            "use_titles": "true"
         }
     },
     "trace_format": "chrome",

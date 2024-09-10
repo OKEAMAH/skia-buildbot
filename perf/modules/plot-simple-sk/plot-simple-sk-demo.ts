@@ -39,6 +39,10 @@ const dummyAnomaly = (isImprovement: boolean): Anomaly => ({
   segment_size_before: 0,
   std_dev_before_anomaly: 0,
   t_statistic: 0,
+  subscription_name: '',
+  bug_component: '',
+  bug_labels: [],
+  bug_cc_emails: [],
 });
 
 window.customElements.whenDefined('plot-simple-sk').then(() => {
@@ -154,11 +158,13 @@ window.customElements.whenDefined('plot-simple-sk').then(() => {
           x: 5,
           y: traces[id][5],
           anomaly: dummyAnomaly(false),
+          highlight: true,
         },
         {
           x: 20,
           y: traces[id][20],
           anomaly: dummyAnomaly(true),
+          highlight: false,
         },
       ];
     }

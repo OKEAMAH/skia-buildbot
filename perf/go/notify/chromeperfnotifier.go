@@ -47,7 +47,8 @@ func (n *ChromePerfNotifier) RegressionFound(
 	previousCommit provider.Commit,
 	alert *alerts.Alert,
 	cl *clustering2.ClusterSummary,
-	frame *frame.FrameResponse) (string, error) {
+	frame *frame.FrameResponse,
+	regressionID string) (string, error) {
 
 	sklog.Infof("%d traces in regression found information for alert %s", len(frame.DataFrame.TraceSet), alert.DisplayName)
 
@@ -134,6 +135,11 @@ func (n *ChromePerfNotifier) RegressionMissing(
 // ExampleSend is for dummy data. Do nothing!
 func (n *ChromePerfNotifier) ExampleSend(ctx context.Context, alert *alerts.Alert) error {
 	sklog.Info("Doing example send on chromeperf notifier")
+	return nil
+}
+
+// UpdateRegressionNotification implements Transport.
+func (n *ChromePerfNotifier) UpdateNotification(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse, notificationId string) error {
 	return nil
 }
 

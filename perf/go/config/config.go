@@ -8,8 +8,10 @@ import (
 
 	iSchema "github.com/invopop/jsonschema"
 	cli "github.com/urfave/cli/v2"
+	"go.skia.org/infra/go/cache/redis"
 	"go.skia.org/infra/go/skerr"
 	"go.skia.org/infra/perf/go/notifytypes"
+	"go.skia.org/infra/perf/go/types"
 )
 
 var errSchemaViolation = errors.New("schema violation")
@@ -87,8 +89,8 @@ type NotifyConfig struct {
 
 // NotifyConfig controls how notifications are sent, and their format.
 type CulpritNotifyConfig struct {
-	// Notifications chooses how notifications are sent when a regression is found.
-	Notifications notifytypes.Type `json:"notifications"`
+	// NotificationType chooses how notifications are sent when a regression is found.
+	NotificationType types.AnomalyDetectionNotifyType `json:"notification_type"`
 
 	// IssueTrackerAPIKeySecretProject is the name of the GCP project where the
 	// issue tracker API key is stored in the secret manager. Only required if
@@ -714,12 +716,14 @@ func (flags *IngestFlags) AsCliFlags() []cli.Flag {
 
 // MaintenanceFlags are the command-line flags for the maintenance process.
 type MaintenanceFlags struct {
-	ConfigFilename     string
-	ConnectionString   string
-	PromPort           string
-	Local              bool
-	MigrateRegressions bool
-	RefreshQueryCache  bool
+	ConfigFilename                string
+	ConnectionString              string
+	PromPort                      string
+	Local                         bool
+	MigrateRegressions            bool
+	RefreshQueryCache             bool
+	DeleteShortcutsAndRegressions bool
+	TilesForQueryCache            int
 }
 
 // AsCliFlags returns a slice of cli.Flag.
@@ -761,10 +765,25 @@ func (flags *MaintenanceFlags) AsCliFlags() []cli.Flag {
 			Value:       false,
 			Usage:       "If true, periodically check the Redis cache instances.",
 		},
+		&cli.IntFlag{
+			Destination: &flags.TilesForQueryCache,
+			Name:        "tiles_for_query_cache",
+			Value:       2,
+			Usage:       "The number of tiles to look for when caching query results.",
+		},
+		&cli.BoolFlag{
+			Destination: &flags.DeleteShortcutsAndRegressions,
+			Name:        "delete_shortcuts_and_regressions",
+			Value:       false,
+			Usage:       "If true, periodically delete outdated regressions and corresponding shortcuts",
+		},
 	}
 }
 
 type FavoritesSectionLinkConfig struct {
+	// Id of a user's personalized favorite
+	Id string `json:"id,omitempty"`
+
 	// Text to display on the link
 	Text string `json:"text"`
 
@@ -788,16 +807,25 @@ type Favorites struct {
 	Sections []FavoritesSectionConfig `json:"sections"`
 }
 
-// RedisConfig contains properties of a redis instance.
-type RedisConfig struct {
-	// The GCP Project of the Redis instance
-	Project string `json:"project,omitempty"`
+// TemporalConfig contains properties of the temporal instance used by the client in the backend.
+type TemporalConfig struct {
+	// The host and port of the temporal instance.
+	HostPort string `json:"host_port,omitempty"`
 
-	// The Zone (Region) of the Redis instance.
-	Zone string `json:"zone,omitempty"`
+	// The namespace used in the temporal config.
+	Namespace string `json:"namespace,omitempty"`
 
-	// The name of the Redis instance.
-	Instance string `json:"instance,omitempty"`
+	// The task queue name where the grouping workflows go to.
+	GroupingTaskQueue string `json:"grouping_task_queue,omitempty"`
+
+	// The task queue name where the bisect workflows go to.
+	PinpointTaskQueue string `json:"pinpoint_task_queue,omitempty"`
+}
+
+// DataPointConfig contains config properties to customize how data for individual points is displayed.
+type DataPointConfig struct {
+	// The link keys to use for commit range urls.
+	KeysForCommitRange []string `json:"keys_for_commit_range,omitempty"`
 }
 
 // QueryConfig contains query customization info for the instance.
@@ -814,9 +842,38 @@ type QueryConfig struct {
 	// If the user makes a selection for any of these params, the user selected value is used.
 	DefaultUrlValues map[string]string `json:"default_url_values,omitempty"`
 
-	// RedisConfig defines the Redis properties used to find the Redis instance which
-	// helps reduce the query latency.
-	RedisConfig RedisConfig `json:"redis_config,omitempty"`
+	// CacheConfig defines the caching config information for the query to reduce latency.
+	CacheConfig QueryCacheConfig `json:"cache_config,omitempty"`
+
+	// RedisConfig defines the Redis properties used to find the Redis instance.
+	RedisConfig redis.RedisConfig `json:"redis_config,omitempty"`
+}
+
+type CacheType string
+
+const (
+	LocalCache CacheType = "local"
+	RedisCache CacheType = "redis"
+)
+
+// QueryCacheConfig provides a struct to hold config data for query cache.
+type QueryCacheConfig struct {
+	Type CacheType `json:"type"`
+
+	// The parameter key of first level of cache.
+	Level1Key string `json:"level1_cache_key,omitempty"`
+
+	// The parameter values of first level of cache.
+	Level1Values []string `json:"level1_cache_values,omitempty"`
+
+	// The parameter key of second level of cache.
+	Level2Key string `json:"level2_cache_key,omitempty"`
+
+	// The parameter values of second level of cache.
+	Level2Values []string `json:"level2_cache_values,omitempty"`
+
+	// The switch to turn cache on and off
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // InstanceConfig contains all the info needed by a Perf instance.
@@ -879,6 +936,10 @@ type InstanceConfig struct {
 	CulpritNotifyConfig CulpritNotifyConfig `json:"culprit_notify_config,omitempty"`
 	AnomalyConfig       AnomalyConfig       `json:"anomaly_config,omitempty"`
 	QueryConfig         QueryConfig         `json:"query_config,omitempty"`
+	TemporalConfig      TemporalConfig      `json:"temporal_config,omitempty"`
+	DataPointConfig     DataPointConfig     `json:"data_point_config,omitempty"`
+
+	EnableSheriffConfig bool `json:"enable_sheriff_config,omitempty"`
 
 	// Measurement ID to use when tracking user metrics with Google Analytics.
 	GoogleAnalyticsMeasurementID string `json:"ga_measurement_id,omitempty"`

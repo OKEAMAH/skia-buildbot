@@ -7,6 +7,9 @@ go_library(
     importpath = "go.skia.org/infra/perf/go/builders",
     visibility = ["//visibility:public"],
     deps = [
+        "//go/cache",
+        "//go/cache/local",
+        "//go/cache/redis",
         "//go/deepequal/assertdeep",
         "//go/skerr",
         "//go/sklog",
@@ -43,6 +46,7 @@ go_library(
         "@com_github_jackc_pgx_v4//:pgx",
         "@com_github_jackc_pgx_v4//pgxpool",
         "@com_github_jackc_pgx_v4//stdlib",
+        "@com_google_cloud_go_redis//apiv1",
     ],
 )
 

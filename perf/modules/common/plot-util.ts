@@ -1,5 +1,6 @@
+import { MISSING_DATA_SENTINEL } from '../const/const';
 import { ColumnHeader } from '../json';
-import { ChartData, DataPoint } from './plot-builder';
+import { ChartAxisFormat, ChartData, DataPoint } from './plot-builder';
 
 /**
  * GetSelectionDateIndicesFromColumnHeader returns the indices of the start and end date
@@ -91,22 +92,39 @@ export function GetSelectionCommitIndicesFromColumnHeader(
  */
 export function CreateChartDataFromTraceSet(
   traceSet: { [key: string]: number[] },
-  xLabels: (number | Date)[]
+  xLabels: (number | Date)[],
+  chartAxisFormat: ChartAxisFormat
 ): ChartData {
   const chartData: ChartData = {
-    data: [],
-    xLabel: 'xLabel',
-    yLabel: 'yLabel',
+    lines: {},
+    xLabel: chartAxisFormat.toString(),
+    yLabel: 'Value',
+    chartAxisFormat: chartAxisFormat,
+    start: xLabels[0],
+    end: xLabels[xLabels.length - 1],
   };
-  const trace = traceSet[Object.keys(traceSet)[0]];
-  for (let i = 0; i < trace.length; i++) {
-    const dataPoint: DataPoint = {
-      x: xLabels[i],
-      y: trace[i],
-    };
 
-    chartData.data.push(dataPoint);
-  }
+  const traceKeys = Object.keys(traceSet);
+  traceKeys.forEach((key) => {
+    const trace = traceSet[key];
+    const traceDataPoints: DataPoint[] = [];
+    for (let i = 0; i < trace.length; i++) {
+      // The MISSING_DATA_SENTINEL const is used to define missing data points
+      // at the given x value in the trace. We should ignore these points when
+      // we create the chart data since the charts library will automatically handle
+      // this scenario.
+      if (trace[i] !== MISSING_DATA_SENTINEL) {
+        const dataPoint: DataPoint = {
+          x: xLabels[i],
+          y: trace[i],
+          anomaly: false,
+        };
+        traceDataPoints.push(dataPoint);
+      }
+    }
+
+    chartData.lines[key] = traceDataPoints;
+  });
 
   return chartData;
 }

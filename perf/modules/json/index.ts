@@ -47,10 +47,14 @@ export interface RevisionInfo {
 	benchmark: string;
 	start_revision: number;
 	end_revision: number;
+	start_time: number;
+	end_time: number;
 	test: string;
 	is_improvement: boolean;
 	bug_id: string;
 	explore_url: string;
+	query: string;
+	anomaly_ids: string[] | null;
 }
 
 export interface ValuePercent {
@@ -83,6 +87,7 @@ export interface ClusterSummary {
 }
 
 export interface FavoritesSectionLinkConfig {
+	id?: string;
 	text: string;
 	href: string;
 	description: string;
@@ -97,16 +102,27 @@ export interface Favorites {
 	sections: FavoritesSectionConfig[] | null;
 }
 
+export interface QueryCacheConfig {
+	type: CacheType;
+	level1_cache_key?: string;
+	level1_cache_values?: string[] | null;
+	level2_cache_key?: string;
+	level2_cache_values?: string[] | null;
+	enabled?: boolean;
+}
+
 export interface RedisConfig {
 	project?: string;
 	zone?: string;
 	instance?: string;
+	cache_expiration_minutes?: number;
 }
 
 export interface QueryConfig {
 	include_params?: string[] | null;
 	default_param_selections?: { [key: string]: string[] | null } | null;
 	default_url_values?: { [key: string]: string } | null;
+	cache_config?: QueryCacheConfig;
 	redis_config?: RedisConfig;
 }
 
@@ -146,6 +162,10 @@ export interface Anomaly {
 	segment_size_before: number;
 	std_dev_before_anomaly: number;
 	t_statistic: number;
+	subscription_name: string;
+	bug_component: string;
+	bug_labels: string[] | null;
+	bug_cc_emails: string[] | null;
 }
 
 export interface FrameResponse {
@@ -290,6 +310,8 @@ export interface SkPerfConfig {
 	trace_format: TraceFormat;
 	need_alert_action: boolean;
 	bug_host_url: string;
+	git_repo_url: string;
+	keys_for_commit_range: string[] | null;
 }
 
 export interface TriageRequest {
@@ -574,6 +596,20 @@ export type TimestampSeconds = number & {
 
 export function TimestampSeconds(v: number): TimestampSeconds {
 	return v as TimestampSeconds;
+};
+
+export type CacheType = string & {
+	/**
+	* WARNING: Do not reference this field from application code.
+	*
+	* This field exists solely to provide nominal typing. For reference, see
+	* https://www.typescriptlang.org/play#example/nominal-typing.
+	*/
+	_cacheTypeBrand: 'type alias for string'
+};
+
+export function CacheType(v: string): CacheType {
+	return v as CacheType;
 };
 
 export type FrameResponseDisplayMode = 'display_query_only' | 'display_plot' | 'display_pivot_table' | 'display_pivot_plot' | 'display_spinner';

@@ -15,7 +15,7 @@
         "issue_tracker_api_key_secret_name": "perf-issue-tracker-apikey"
     },
     "culprit_notify_config": {
-        "notifications": "none"
+        "notification_type": "none"
     },
     "data_store_config": {
         "datastore_type": "cockroachdb",
@@ -46,9 +46,22 @@
             "arch",
             "config",
             "test",
-            "units",
-	    "bot"
-        ]
+            "units"
+        ],
+        "cache_config": {
+            "type": "local",
+            "enabled": true,
+            "level1_cache_key": "arch",
+            "level2_cache_key": "config"
+        },
+        "default_url_values": {
+            "plotSummary": "true",
+            "useTestPicker": "true",
+            "showZero": "false",
+            "enable_chart_tooltip": "true",
+            "use_test_picker_query": "true",
+            "use_titles": "true"
+        }
     },
     "favorites": {
         "sections":[

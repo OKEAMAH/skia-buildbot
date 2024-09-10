@@ -21,6 +21,7 @@ const (
 	updateFavorite
 	deleteFavorite
 	listFavorites
+	liveness // verifies the front end is still in connection to cockroachDB
 )
 
 // statements holds all the raw SQL statemens.
@@ -39,7 +40,6 @@ var statements = map[statement]string{
 		VALUES
 			($1, $2, $3, $4, $5)
 	`,
-
 	updateFavorite: `
 		UPDATE
 			Favorites
@@ -66,6 +66,14 @@ var statements = map[statement]string{
 		WHERE
 			user_id=$1
 	`,
+	liveness: `
+		EXPLAIN
+		SELECT
+			*
+		FROM
+			Favorites
+		LIMIT 1;
+	`,
 }
 
 // FavoriteStore implements the favorite.Store interface using an SQL
@@ -82,7 +90,7 @@ func New(db pool.Pool) *FavoriteStore {
 }
 
 // Get implements the favorites.Store interface.
-func (s *FavoriteStore) Get(ctx context.Context, id int64) (*favorites.Favorite, error) {
+func (s *FavoriteStore) Get(ctx context.Context, id string) (*favorites.Favorite, error) {
 	fav := &favorites.Favorite{}
 	if err := s.db.QueryRow(ctx, statements[getFavorite], id).Scan(
 		&fav.ID,
@@ -107,22 +115,22 @@ func (s *FavoriteStore) Create(ctx context.Context, req *favorites.SaveRequest) 
 }
 
 // Create implements the favorites.Store interface.
-func (s *FavoriteStore) Update(ctx context.Context, req *favorites.SaveRequest, id int64) error {
+func (s *FavoriteStore) Update(ctx context.Context, req *favorites.SaveRequest, id string) error {
 	now := time.Now().Unix()
 	if _, err := s.db.Exec(ctx, statements[updateFavorite], req.Name, req.Url, req.Description, now, id); err != nil {
-		return skerr.Wrapf(err, "Failed to update favorite with id=%d", id)
+		return skerr.Wrapf(err, "Failed to update favorite with id=%s", id)
 	}
 	return nil
 }
 
 // Delete implements the favorites.Store interface.
-func (s *FavoriteStore) Delete(ctx context.Context, userId string, id int64) error {
+func (s *FavoriteStore) Delete(ctx context.Context, userId string, id string) error {
 	call, err := s.db.Exec(ctx, statements[deleteFavorite], id, userId)
 	if err != nil {
-		return skerr.Wrapf(err, "Failed to delete favorite with id=%d", id)
+		return skerr.Wrapf(err, "Failed to delete favorite with id=%s", id)
 	}
 	if call.RowsAffected() != 1 {
-		return skerr.Fmt("Failed to delete favorite with id=%d", id)
+		return skerr.Fmt("No rows changed=%s", id)
 	}
 
 	return nil
@@ -145,4 +153,12 @@ func (s *FavoriteStore) List(ctx context.Context, userId string) ([]*favorites.F
 		ret = append(ret, f)
 	}
 	return ret, nil
+}
+
+func (s *FavoriteStore) Liveness(ctx context.Context) error {
+	var live string
+	if err := s.db.QueryRow(ctx, statements[liveness]).Scan(&live); err != nil {
+		return skerr.Wrapf(err, "cockroachDB connection is lost")
+	}
+	return nil
 }

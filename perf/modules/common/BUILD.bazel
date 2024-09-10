@@ -16,6 +16,18 @@ ts_library(
     visibility = ["//visibility:public"],
     deps = [
         ":plot-builder_ts_lib",
+        "//perf/modules/const:const_ts_lib",
+        "//perf/modules/json:index_ts_lib",
+    ],
+)
+
+ts_library(
+    name = "test-util_ts_lib",
+    srcs = ["test-util.ts"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/fetch-mock",
+        "//infra-sk/modules/json:index_ts_lib",
         "//perf/modules/json:index_ts_lib",
     ],
 )

@@ -28,6 +28,7 @@ type Formatter interface {
 type Transport interface {
 	SendNewRegression(ctx context.Context, alert *alerts.Alert, body, subject string) (threadingReference string, err error)
 	SendRegressionMissing(ctx context.Context, threadingReference string, alert *alerts.Alert, body, subject string) (err error)
+	UpdateRegressionNotification(ctx context.Context, alert *alerts.Alert, body, notificationId string) (err error)
 }
 
 const (
@@ -70,7 +71,7 @@ type TemplateContext struct {
 // Notifier provides an interface for regression notification functions
 type Notifier interface {
 	// RegressionFound sends a notification for the given cluster found at the given commit.
-	RegressionFound(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse) (string, error)
+	RegressionFound(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse, regressionID string) (string, error)
 
 	// RegressionMissing sends a notification that a previous regression found for
 	// the given cluster found at the given commit has disappeared after more data
@@ -79,6 +80,8 @@ type Notifier interface {
 
 	// ExampleSend sends an example for dummy data for the given alerts.Config.
 	ExampleSend(ctx context.Context, alert *alerts.Alert) error
+
+	UpdateNotification(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse, notificationId string) error
 }
 
 // defaultNotifier sends notifications.
@@ -101,7 +104,7 @@ func newNotifier(formatter Formatter, transport Transport, url string) Notifier 
 }
 
 // RegressionFound sends a notification for the given cluster found at the given commit. Where to send it is defined in the alerts.Config.
-func (n *defaultNotifier) RegressionFound(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse) (string, error) {
+func (n *defaultNotifier) RegressionFound(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse, regressionID string) (string, error) {
 	body, subject, err := n.formatter.FormatNewRegression(ctx, commit, previousCommit, alert, cl, n.url, frame)
 	if err != nil {
 		return "", err
@@ -168,7 +171,7 @@ func (n *defaultNotifier) ExampleSend(ctx context.Context, alert *alerts.Alert) 
 		},
 	}
 
-	threadingReference, err := n.RegressionFound(ctx, commit, previousCommit, alert, cl, frame)
+	threadingReference, err := n.RegressionFound(ctx, commit, previousCommit, alert, cl, frame, "")
 	if err != nil {
 		return skerr.Wrap(err)
 	}
@@ -177,6 +180,14 @@ func (n *defaultNotifier) ExampleSend(ctx context.Context, alert *alerts.Alert) 
 		return skerr.Wrap(err)
 	}
 	return nil
+}
+
+func (n *defaultNotifier) UpdateNotification(ctx context.Context, commit, previousCommit provider.Commit, alert *alerts.Alert, cl *clustering2.ClusterSummary, frame *frame.FrameResponse, notificationId string) error {
+	body, _, err := n.formatter.FormatNewRegression(ctx, commit, previousCommit, alert, cl, n.url, frame)
+	if err != nil {
+		return err
+	}
+	return n.transport.UpdateRegressionNotification(ctx, alert, body, notificationId)
 }
 
 // New returns a Notifier of the selected type.

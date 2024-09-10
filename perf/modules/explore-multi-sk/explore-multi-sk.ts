@@ -12,7 +12,7 @@
  * keeping the logic simple.
  *
  */
-import { html } from 'lit-html';
+import { html } from 'lit/html.js';
 import { define } from '../../../elements-sk/modules/define';
 import {
   DEFAULT_RANGE_S,
@@ -25,17 +25,23 @@ import {
 
 import { TestPickerSk } from '../test-picker-sk/test-picker-sk';
 
-import { fromKey } from '../paramtools';
+import { queryFromKey } from '../paramtools';
 import { stateReflector } from '../../../infra-sk/modules/stateReflector';
 import { HintableObject } from '../../../infra-sk/modules/hintable';
 import { errorMessage } from '../errorMessage';
 import { ElementSk } from '../../../infra-sk/modules/ElementSk';
+import { QueryConfig } from '../json';
 
 import '../explore-simple-sk';
+import '../favorites-dialog-sk';
 import '../test-picker-sk';
 import '../../../golden/modules/pagination-sk/pagination-sk';
 
+import { $$ } from '../../../infra-sk/modules/dom';
 import { jsonOrThrow } from '../../../infra-sk/modules/jsonOrThrow';
+import { LoggedIn } from '../../../infra-sk/modules/alogin-sk/alogin-sk';
+import { Status as LoginStatus } from '../../../infra-sk/modules/json';
+import { FavoritesDialogSk } from '../favorites-dialog-sk/favorites-dialog-sk';
 import { PaginationSkPageChangedEventDetail } from '../../../golden/modules/pagination-sk/pagination-sk';
 
 class State {
@@ -62,6 +68,14 @@ class State {
   plotSummary: boolean = false;
 
   useTestPicker: boolean = false;
+
+  highlight_anomalies: string[] = [];
+
+  enable_chart_tooltip: boolean = false;
+
+  show_remove_all: boolean = true;
+
+  use_titles: boolean = false;
 }
 
 export class ExploreMultiSk extends ElementSk {
@@ -89,13 +103,15 @@ export class ExploreMultiSk extends ElementSk {
 
   private testPicker: TestPickerSk | null = null;
 
-  private testPickerParams: string[] | null = [];
+  private defaults: QueryConfig | null = null;
+
+  private userEmail: string = '';
 
   constructor() {
     super(ExploreMultiSk.template);
   }
 
-  connectedCallback(): void {
+  async connectedCallback() {
     super.connectedCallback();
 
     this._render();
@@ -105,6 +121,8 @@ export class ExploreMultiSk extends ElementSk {
     this.mergeGraphsButton = this.querySelector('#merge-graphs-button');
     this.addGraphButton = this.querySelector('#add-graph-button');
     this.testPicker = this.querySelector('#test-picker');
+
+    await this.initializeDefaults();
 
     this.stateHasChanged = stateReflector(
       () => this.state as unknown as HintableObject,
@@ -147,7 +165,23 @@ export class ExploreMultiSk extends ElementSk {
         this.updateButtons();
       }
     );
+
+    LoggedIn()
+      .then((status: LoginStatus) => {
+        this.userEmail = status.email;
+        this._render();
+      })
+      .catch(errorMessage);
   }
+
+  private canAddFav(): boolean {
+    return this.userEmail !== null && this.userEmail !== '';
+  }
+
+  private openAddFavoriteDialog = async () => {
+    const d = $$<FavoritesDialogSk>('#fav-dialog', this) as FavoritesDialogSk;
+    await d!.open();
+  };
 
   private static template = (ele: ExploreMultiSk) => html`
     <div id="menu">
@@ -180,7 +214,16 @@ export class ExploreMultiSk extends ElementSk {
         title="Merge all graphs into a single graph.">
         Merge Graphs
       </button>
-      <test-picker-sk id="test-picker"></test-picker-sk>
+      <button
+        id="favBtn"
+        ?disabled=${!ele.canAddFav()}
+        @click=${() => {
+          ele.openAddFavoriteDialog();
+        }}>
+        Add to Favorites
+      </button>
+      <favorites-dialog-sk id="fav-dialog"></favorites-dialog-sk>
+      <test-picker-sk id="test-picker" class="hidden"></test-picker-sk>
     </div>
     <hr />
 
@@ -210,49 +253,86 @@ export class ExploreMultiSk extends ElementSk {
   `;
 
   /**
-   * Fetch include_params flag from instance config. If it's set,
-   * initialize the test picker using the params provided.
+   * Fetch defaults from backend.
    *
-   * If testPicker is initialized, disable Add Graph button.
+   * Defaults are used in multiple ways by downstream elements:
+   * - TestPickerSk uses include_params to initialize only the fields
+   *   specified and in the given order.
+   * - ExploreSimpleSk and TestPickerSk use default_param_selections to
+   *   apply default param values to queries before making backend
+   *   requests.
    */
-  private initializeTestPicker() {
-    fetch(`/_/defaults/`, {
+  private async initializeDefaults() {
+    await fetch(`/_/defaults/`, {
       method: 'GET',
     })
       .then(jsonOrThrow)
       .then((json) => {
-        this.testPickerParams = json?.include_params ?? null;
-        if (this.testPickerParams !== null) {
-          this.useTestPicker = true;
-          this.addGraphButton!.style.display = 'none';
-          this.testPicker!.style.display = 'flex';
-          this.testPicker!.initializeTestPicker(this.testPickerParams);
+        this.defaults = json;
+      });
 
-          // Event listener for when the Test Picker plot button is clicked.
-          // This will create a new empty Graph at the top and plot it with the
-          // selected test values.
-          this.addEventListener('plot-button-clicked', (e) => {
-            const explore = this.addEmptyGraph(true);
-            if (explore) {
-              this.addGraphsToCurrentPage();
-              const query = this.testPicker!.createQueryFromFieldData();
-              explore.addFromQueryOrFormula(true, 'query', query, '');
-            }
-          });
+    if (this.defaults !== null) {
+      if (
+        this.defaults.default_url_values !== undefined &&
+        this.defaults.default_url_values !== null
+      ) {
+        const defaultKeys = Object.keys(this.defaults.default_url_values);
+        if (
+          defaultKeys !== null &&
+          defaultKeys !== undefined &&
+          defaultKeys.indexOf('useTestPicker') > -1
+        ) {
+          const stringToBool = function (str: string): boolean {
+            return str.toLowerCase() === 'true';
+          };
+          this.state.useTestPicker = stringToBool(
+            this.defaults!.default_url_values.useTestPicker
+          );
+        }
+      }
+    }
+  }
 
-          // Event listener for when the "Query Highlighted" button is clicked.
-          // It will populate the Test Picker with the keys from the highlighted
-          // trace.
-          this.addEventListener('populate-query', (e) => {
-            const trace_key = (e as CustomEvent).detail.key;
-            this.testPicker!.populateFieldDataFromQuery(
-              this.queryFromKey(trace_key),
-              this.testPickerParams!
-            );
-            this.testPicker!.scrollIntoView();
-          });
+  /**
+   * Initialize TestPickerSk only if include_params has been specified.
+   *
+   * If so, hide the default "Add Graph" button and display the Test Picker.
+   */
+  private async initializeTestPicker() {
+    const testPickerParams = this.defaults?.include_params ?? null;
+    if (testPickerParams !== null) {
+      this.useTestPicker = true;
+      this.addGraphButton!.classList.add('hidden');
+      this.testPicker!.classList.remove('hidden');
+      this.testPicker!.initializeTestPicker(
+        testPickerParams!,
+        this.defaults?.default_param_selections ?? {}
+      );
+
+      // Event listener for when the Test Picker plot button is clicked.
+      // This will create a new empty Graph at the top and plot it with the
+      // selected test values.
+      this.addEventListener('plot-button-clicked', (e) => {
+        const explore = this.addEmptyGraph(true);
+        if (explore) {
+          this.addGraphsToCurrentPage();
+          const query = this.testPicker!.createQueryFromFieldData();
+          explore.addFromQueryOrFormula(true, 'query', query, '');
         }
       });
+
+      // Event listener for when the "Query Highlighted" button is clicked.
+      // It will populate the Test Picker with the keys from the highlighted
+      // trace.
+      this.addEventListener('populate-query', (e) => {
+        const trace_key = (e as CustomEvent).detail.key;
+        this.testPicker!.populateFieldDataFromQuery(
+          queryFromKey(trace_key),
+          testPickerParams!
+        );
+        this.testPicker!.scrollIntoView();
+      });
+    }
   }
 
   private clearGraphs() {
@@ -316,6 +396,12 @@ export class ExploreMultiSk extends ElementSk {
       labelMode: LabelMode.Date,
       disable_filter_parent_traces: explore.state.disable_filter_parent_traces,
       plotSummary: this.state.plotSummary,
+      highlight_anomalies: this.state.highlight_anomalies,
+      enable_chart_tooltip: this.state.enable_chart_tooltip,
+      show_remove_all: this.state.show_remove_all,
+      use_titles: this.state.use_titles,
+      useTestPicker: this.state.useTestPicker,
+      use_test_picker_query: false,
     };
     explore.state = newState;
   }
@@ -326,6 +412,7 @@ export class ExploreMultiSk extends ElementSk {
       this.useTestPicker
     );
     const graphConfig = new GraphConfig();
+    explore.defaults = this.defaults;
     explore.openQueryByDefault = false;
     explore.navOpen = false;
     if (unshift) {
@@ -425,28 +512,6 @@ export class ExploreMultiSk extends ElementSk {
   }
 
   /**
-   * Parse a structured key into a queries string.
-   *
-   * Since this is done on the frontend, this function does not do key or query validation.
-   *
-   * Example:
-   *
-   * Key ",a=1,b=2,c=3,"
-   *
-   * transforms into
-   *
-   * Query "a=1&b=2&c=3"
-   *
-   * @param {string} key - A structured trace key.
-   *
-   * @returns {string} - A query string that can be used in the queries property
-   * of explore-simple-sk's state.
-   */
-  private queryFromKey(key: string): string {
-    return new URLSearchParams(fromKey(key)).toString();
-  }
-
-  /**
    * Takes the traces of a single graph and create a separate graph for each of those
    * traces.
    *
@@ -485,7 +550,7 @@ export class ExploreMultiSk extends ElementSk {
     traceset.forEach((key, i) => {
       this.addEmptyGraph();
       if (key[0] === ',') {
-        const queries = this.queryFromKey(key);
+        const queries = queryFromKey(key);
         this.graphConfigs[i].queries = [queries];
       } else {
         const formulas = key;

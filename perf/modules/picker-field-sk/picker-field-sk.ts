@@ -23,7 +23,7 @@
  * >
  * </picker-field-sk>
  */
-import { html } from 'lit-html';
+import { html } from 'lit/html.js';
 import { define } from '../../../elements-sk/modules/define';
 import { ElementSk } from '../../../infra-sk/modules/ElementSk';
 import '@vaadin/combo-box/theme/lumo/vaadin-combo-box.js';
@@ -66,6 +66,16 @@ export class PickerFieldSk extends ElementSk {
 
   openOverlay() {
     this._comboBox!.click();
+    this._render();
+  }
+
+  disable() {
+    this._comboBox!.setAttribute('readonly', '');
+    this._render();
+  }
+
+  enable() {
+    this._comboBox!.removeAttribute('readonly');
     this._render();
   }
 
